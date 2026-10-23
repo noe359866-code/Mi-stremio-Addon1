@@ -1,8 +1,9 @@
 # ⭐ Stremio Ratings Scraper — addon de **solo puntuaciones**
 
 Addon de Stremio que **no da streams**: únicamente scrapea/consulta la **puntuación** de
-películas, series y anime en estas cinco fuentes y la mete en Stremio (badge `⭐ 8.4` en
-tarjetas + desglose completo en la ficha).
+películas, series y anime en estas **siete fuentes** y la mete en Stremio (badge `⭐ 8.4` en
+tarjetas + desglose completo en la ficha). AniList y MyAnimeList se añaden **solo en anime**,
+así que no ensucian las fichas de pelis y series de acción real.
 
 | Fuente | Qué se saca | Cómo |
 | --- | --- | --- |
@@ -11,6 +12,8 @@ tarjetas + desglose completo en la ficha).
 | **Metacritic** | Metascore /100, User score /10, nº de críticas | endpoint JSON interno (`backend.metacritic.com`) → HTML de la ficha → buscador |
 | **FilmAffinity** | nota /10 (coma decimal), votos, puesto Top 200 | `search.php?stext=…` → ficha (enlaza a IMDb: se aprovecha el `tt…`) |
 | **TMDB** | `vote_average` + votos (y el rating de IMDb que TMDB expone en `/rating`) | **API oficial** v3/v4 con `TMDB_API_KEY` — además actúa de *resolvedor*: convierte `tt…` ⇄ título/año/tipo/póster |
+| **AniList** 🌸 | `averageScore` (0-100), nº de usuarios que puntuaron, popularidad, favoritos, formato/estado/temporada, póster y banner | **API GraphQL pública sin key** (`POST graphql.anilist.co`). Da `idMal` → cruce automático con MAL |
+| **MyAnimeList** 🎌 | nota /10, `scored_by`, puesto en el ranking y popularidad | API oficial v2 si defines `MAL_CLIENT_ID` → si no, **Jikan** (`api.jikan.moe`, sin key) → si no, HTML de la ficha |
 
 Salida en Stremio (ficha de *Inception*, modo demo):
 
@@ -25,6 +28,14 @@ Salida en Stremio (ficha de *Inception*, modo demo):
 🎬 TMDB 8.4/10 · 645 k votos
 ————— ★★★★☆ 8.4/10 · muy buena
 🍅 Consenso: Audaz, inteligente y visualmente deslumbrante…
+```
+
+En anime (demo, *Jujutsu Kaisen*) el panel gana dos líneas y la combinada las usa:
+
+```text
+🎌 MyAnimeList 8.6/10 · 2,4 M votos · #8 (popularidad #12)
+🌸 AniList 84/100 · 246 k puntuaciones (media 83)
+————— ★★★★☆ 8.7/10 · imprescindible
 ```
 
 * **0 dependencias**: `node server.js` y listo (ni `npm install`). Usa `fetch` de Node 18+.
@@ -61,14 +72,20 @@ manifiesto en Stremio → *Addons* → pegar). En Android hay que servirlo en la
 
 ## 2. Qué verás en Stremio
 
-1. **Discover** → 18 catálogos del tipo `⭐ IMDb · Top 250`, `🍅 Rotten Tomatoes · Top crítica`,
+1. **Discover** → 24 catálogos del tipo `⭐ IMDb · Top 250`, `🍅 Rotten Tomatoes · Top crítica`,
    `🎯 Metacritic · Metascore`, `🎞️ FilmAffinity · Top 200/series`, `🌸 Anime · Top TMDB (sub/jp)`,
-   `💀 TMDB · Las peor puntuadas`, `🇪🇸 Top en español`, etc. Cada tarjeta lleva el badge con la nota.
+   `💀 TMDB · Las peor puntuadas`, `🇪🇸 Top en español`, y en anime `🎌 Anime · Top MyAnimeList`,
+   `🎌 Anime · Populares en MAL`, `📺 Anime · En emisión (MAL)`, `🌸 Anime · Top AniList`,
+   `🔥 Anime · Tendencia AniList`, `🍂 Anime · Temporada actual (AniList)`. Cada tarjeta lleva el
+   badge con la nota; las de AniList/MAL traen además su póster, así que Discover de anime se ve lleno.
 2. **Ficha**: al abrir un título que venga de estos catálogos, Stremio consulta el recurso
-   `meta` de este addon (`idPrefixes: tt`, `tmdb:`, …) y pinta el desglose de arriba + enlaces
+   `meta` de este addon (`idPrefixes: tt`, `tmdb:`, `anilist:`, `mal:`, …) y pinta el desglose de arriba + enlaces
    directos a cada ficha (categoría *Puntuaciones*).
 3. **Búsqueda dentro de un catálogo** (`extra.search`): escribe en la lupa de Stremio con un
-   catálogo del addon activo y busca en IMDb/RT/Metacritic/FilmAffinity/TMDB.
+   catálogo del addon activo y busca en IMDb/RT/Metacritic/FilmAffinity/TMDB/AniList/MAL
+   (el `extra` llega como segmento de ruta, p. ej. `/catalog/anime/anilist-top/search%3Dfrieren.json`).
+4. **Fichas por id de anime**: `anilist:21495` o `mal:28851` (o pegar la URL de la ficha) bastan
+   para resolver título/año/póster sin pasar por TMDB.
 
 > Stremio solo tiene **un** hueco numérico para notas, así que ahí va la métrica elegida en
 > `BADGE_METRIC` (por defecto la **combinada**: media ponderada con confianza por nº de votos).
@@ -88,8 +105,10 @@ Dos capas, la de URL gana sobre las variables de entorno:
 | --- | --- | --- |
 | `TMDB_API_KEY` / `TMDB_API_TOKEN` | key del proyecto anterior | API oficial TMDB (resolución + nota). **Pon la tuya**: la heredada está pública en GitHub y puede estar rota/limitada |
 | `OMDB_API_KEY` | – | Respaldo de IMDb/RT/Metacritic cuando el scraper está bloqueado (gratis, 1000 req/día) |
-| `RATINGS_SOURCES` | las 5 | Desactiva fuentes lentas: p. ej. `imdb,tmdb,filmaffinity` |
-| `BADGE_METRIC` | `combined` | `imdb`, `rt_tomatometer`, `mc_metascore`, `filmaffinity`, `tmdb` |
+| `RATINGS_SOURCES` | las 7 | Desactiva fuentes lentas: p. ej. `imdb,tmdb,filmaffinity` o `anilist,mal,tmdb` para solo anime |
+| `MAL_CLIENT_ID` | – | API oficial de MyAnimeList (mejor que Jikan: sin cola de terceros). Se pide en *MyAnimeList → API* |
+| `JIKAN_BASE_URL` / `ANILIST_GRAPHQL_URL` | – | Apunta a tu propio Jikan autohospedado o a otro endpoint de AniList |
+| `BADGE_METRIC` | `combined` | `imdb`, `rt_tomatometer`, `mc_metascore`, `filmaffinity`, `mal`, `anilist`, `tmdb` |
 | `WEIGHT_*`, `MIN_VOTES_*` | ver `.env.example` | Pesos y umbral de votos de la nota combinada |
 | `CACHE_TTL_HOURS` / `CHART_TTL_HOURS` | 24 / 6 | Caché RAM de fichas y listas |
 | `FETCH_TIMEOUT_MS`, `FETCH_RETRIES`, `PER_HOST_MS` | 9000 / 1 / 700 | Presión sobre cada dominio (sube `PER_HOST_MS` si te bloquean) |
@@ -236,7 +255,7 @@ netlify/functions/ratings.js  adaptador Netlify   ·   api/ratings.js  adaptador
 src/app.js                    router único: handle({method,path,query}) → {status,headers,body}
 src/serverless.js             normaliza eventos de Netlify/Vercel (path, query, origin) y responde lambda
 src/manifest.js               manifiesto Stremio + logo/bg SVG      src/configure.js  página /configure.html
-src/resolve.js                id Stremio → work{title,year,type,ids} (TMDB find/search, arranque por IMDb)
+src/resolve.js                id Stremio → work{title,year,type,ids} (TMDB find/search, arranque por IMDb o por AniList en anime)
 src/providers/tmdb.js         API oficial: search/find/details/discover  (el "resolvedor")
 src/providers/imdb.js         ficha IMDb + /find + respaldo OMDb
 src/providers/rottentomatoes.js  slug adivinado → init-data → buscador
@@ -244,13 +263,15 @@ src/providers/metacritic.js   backend JSON → HTML → buscador
 src/providers/filmaffinity.js search.php → ficha (+cruce al tt… de IMDb)
 src/providers/index.js        orquesta, fusiona métricas, reintenta con ids nuevos, estados
 src/parsers/*.js              funciones puras HTML/JSON → métricas (¡aquí se arregla un rediseño!)
+                              (anilist.js además genera los guiones GraphQL con sólo las
+                              variables que se usan, que AniList rechaza si sobran)
 src/match.js                  "¿es la misma obra?" (título+year) — evita dar la nota de otra peli
 src/catalog.js                definición de catálogos y normalización 0-10
 src/format.js                 meta de Stremio: badge, descripción, links
-src/defs.js                   registro de fuentes/métricas, pesos, combinada, estrellas
+src/defs.js                   registro de fuentes/métricas (con `animeOnly`), pesos, combinada, estrellas
 src/cache.js src/http.js      TTL+LRU+single-flight · fetch con UA de navegador, timeout, throttle por dominio
 src/mock/index.js             modo demo: HTML/JSON con el markup real de cada web
-test/*.test.js                91 tests (parsers con fixtures, match, pesos, addon entero, linter
+test/*.test.js                106 tests (parsers con fixtures, match, pesos, addon entero, linter
                               oficial de Stremio, adaptadores serverless y el JS del navegador)
 ```
 
@@ -262,6 +283,17 @@ Reglas de oro al tocar un parser:
 * Nunca aceptar un resultado de búsqueda sin pasar por `match.looksLikeSameWork`.
 
 ## 7. Limitaciones y aviso legal
+
+**Rate limits de las fuentes de anime** (son API públicas sin key, así que tienen techo):
+
+| Fuente | Límite orientativo | Cómo lo llevamos |
+| --- | --- | --- |
+| AniList GraphQL | ~90 peticiones/min por IP | `PER_HOST_MS` + caché; si devuelve 429 la fuente se marca `rate_limited` y el resto sigue OK |
+| Jikan (espejo de MAL) | ~3 req/s y 60/min | una petición por título (el `idMal` de AniList evita buscar a ciegas) + caché |
+| API oficial de MAL | más holgada, pide `MAL_CLIENT_ID` | recomendada si el addon va a tener tráfico |
+
+Si Jikan se satura, lo limpio es poner `MAL_CLIENT_ID` o dejar
+`RATINGS_SOURCES=anilist,mal,imdb,tmdb` (AniList solo ya da nota de anime decente).
 
 * **No es una API oficial**: IMDb/RT/Metacritic/FilmAffinity no ofrecen acceso público a sus
   datos; el scraping directo puede dejar de funcionar en cualquier cambio de su HTML y puede

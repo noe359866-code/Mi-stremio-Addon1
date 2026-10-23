@@ -24,6 +24,8 @@ const checks = [
   { name: 'catálogo FilmAffinity', url: '/catalog/movie/fa-top.json', json: true, test: (c) => assert(c.metas && c.metas.length > 0, 'metas no vacío'), info: (c) => `${c.metas.length} ítems` },
   { name: 'ficha de película', url: '/meta/movie/tt1375606.json', json: true, test: (m) => assert(m.meta && m.meta.description, 'meta.description'), info: (m) => `${m.meta.name} · ${m.meta.links ? m.meta.links.length : 0} enlaces` },
   { name: 'ficha de serie', url: '/meta/series/tt0903747.json', json: true, test: (m) => assert(m.meta, 'meta presente o null'), info: (m) => (m.meta ? m.meta.name : 'null (sin datos, no es error)') },
+  { name: 'catálogo anime (AniList)', url: '/catalog/anime/anilist-top.json', json: true, test: (c) => assert(c.metas && c.metas.length > 0, 'metas no vacío'), info: (c) => `${c.metas.length} ítems · 1º ${c.metas[0].name} ⭐${c.metas[0].imdbRating}` },
+  { name: 'catálogo anime (MAL)', url: '/catalog/anime/mal-top.json', json: true, test: (c) => assert(c.metas && c.metas.length > 0, 'metas no vacío'), info: (c) => `${c.metas.length} ítems` },
   { name: 'API de puntuaciones', url: '/api/ratings?title=Inception', json: true, test: (r) => assert(r.ok === true && r.scores && Object.keys(r.scores).length > 0, 'ok + scores'), info: (r) => `${Object.keys(r.scores).length} métricas · combinada ${r.combined && r.combined.value}` },
   { name: '404 útil', url: '/no-existe.json', expect: 404, test: (body, res) => assert(res.status === 404, 'status 404'), info: () => '404 con pistas' },
 ];
@@ -47,7 +49,7 @@ function base64UrlEncode(value) {
 async function run() {
   console.log(`\nVerificando ${BASE}\n${'-'.repeat(72)}`);
   const token = base64UrlEncode({ sources: ['imdb', 'tmdb'], badge: 'imdb' });
-  const all = [...checks, { name: 'config por ruta /c/<token>', url: `/c/${token}/manifest.json`, json: true, test: (m) => assert(m.catalogs.every((c) => /imdb|tmdb/.test(c.id)), 'catálogos filtrados por la config'), info: (m) => `${m.catalogs.length} catálogos (config de 2 fuentes)` }];
+  const all = [...checks, { name: 'notas de anime (AniList+MAL)', url: '/api/ratings?title=Jujutsu%20Kaisen&type=anime', json: true, test: (r) => assert(r.ok === true && r.scores.anilist && r.scores.mal, 'anilist y mal con nota'), info: (r) => `AniList ${r.scores.anilist.value}/100 · MAL ${r.scores.mal.value}/10` }, { name: 'config por ruta /c/<token>', url: `/c/${token}/manifest.json`, json: true, test: (m) => assert(m.catalogs.every((c) => /imdb|tmdb/.test(c.id)), 'catálogos filtrados por la config'), info: (m) => `${m.catalogs.length} catálogos (config de 2 fuentes)` }];
 
   let failed = 0;
   for (const check of all) {

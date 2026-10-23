@@ -229,7 +229,7 @@ function configureHtml({ cfg, origin, basePath = '' }) {
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <title>${escapeHtml(cfg.addonName)} · Stremio</title>
-<meta name="description" content="Addon de Stremio que solo scrapea puntuaciones: IMDb, Rotten Tomatoes, Metacritic, FilmAffinity y TMDB." />
+<meta name="description" content="Addon de Stremio solo con puntuaciones: IMDb, Rotten Tomatoes, Metacritic, FilmAffinity, TMDB y, para anime, AniList y MyAnimeList." />
 <link rel="icon" href="${basePath}/logo.svg" />
 <style>${CSS}</style>
 </head><body>
@@ -240,7 +240,7 @@ function configureHtml({ cfg, origin, basePath = '' }) {
       <h1>${escapeHtml(cfg.addonName)}</h1>
       <div class="sub">v${VERSION} · solo puntuaciones, cero streams · ${escapeHtml(cfg.addonDescription)}</div>
       <div class="chips">
-        <span class="pill">IMDb</span><span class="pill">Rotten Tomatoes</span><span class="pill">Metacritic</span>
+        <span class="pill">IMDb</span><span class="pill">Rotten Tomatoes</span><span class="pill">Metacritic</span><span class="pill">🌸 AniList</span><span class="pill">🎌 MyAnimeList</span>
         <span class="pill">FilmAffinity</span><span class="pill">TMDB</span><span class="pill">anime</span>
       </div>
     </div>
@@ -309,7 +309,7 @@ function configureHtml({ cfg, origin, basePath = '' }) {
       <section class="card">
         <h2>Notas legales y de uso</h2>
         <div class="small">
-          <p>· IMDb, Rotten Tomatoes, Metacritic y FilmAffinity <b>no tienen API pública</b>: esto es scraping directo con caché (TTL), límite por dominio y degradación elegante. Respeta sus términos de uso: uso personal, pocas peticiones, nada de reempaquetar sus datos.</p>
+          <p>· IMDb, Rotten Tomatoes, Metacritic y FilmAffinity <b>no tienen API pública</b>: esto es scraping directo con caché (TTL), límite por dominio y degradación elegante. AniList usa su API GraphQL (sin key) y MyAnimeList su API oficial si pones <code>MAL_CLIENT_ID</code> o, si no, Jikan. Respeta sus términos de uso: uso personal, pocas peticiones, nada de reempaquetar sus datos.</p>
           <p>· Esos muros anti-bot suelen bloquear IPs de VPS/datacenter (Railway, Render, Netlify…). Si ves todo ✕, despliega en tu casa (Docker en un NAS/PC) o añade <code>OMDB_API_KEY</code> como respaldo.</p>
           <p>· TMDB sí es API oficial: pon tu <code>TMDB_API_KEY</code> (la del repo es la heredada del proyecto anterior, cámbiala).</p>
         </div>

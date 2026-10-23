@@ -58,7 +58,7 @@ test('rutas de assets y páginas', async () => {
   const health = await jsonOf('/api/health');
   assert.equal(health.ok, true);
   assert.equal(health.mock, true);
-  assert.equal(health.sources.length, 5);
+  assert.equal(health.sources.length, 7, '7 fuentes: las 5 de siempre + AniList y MAL');
 });
 
 test('/api/health y 404 con rutas útiles', async () => {
@@ -180,7 +180,7 @@ test('/api/ratings: cada fuente reporta su estado y hay nota combinada', async (
   assert.equal(data.scores.imdb.votes, 890123);
   assert.equal(data.scores.mc_metascore.value, 96);
   assert.ok(data.combined.value > 8 && data.combined.value < 10);
-  assert.equal(data.sources.length, 5);
+  assert.equal(data.sources.length, 5, 'aniList/MAL se saltan en pelis (no indexan action real)');
   assert.ok(data.sources.every((source) => source.ok === true), JSON.stringify(data.sources));
   assert.equal(data.query.ids.imdb, 'tt6751668', 'TMDB resuelve el imdb_id desde el título');
 });

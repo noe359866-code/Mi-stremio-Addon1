@@ -227,7 +227,8 @@ class Runtime {
           ])
         ),
         combined: combined ? { value: combined.value, verdict: combined.verdict, used: combined.used } : null,
-        sources: collected.statuses,
+        sources: collected.statuses.filter((status) => !status.skipped),
+        skipped: collected.statuses.filter((status) => status.skipped).map((status) => status.source),
         stremio: { id: meta.id, type: meta.type, name: meta.name, imdbRating: meta.imdbRating, description: meta.description },
         stremioId: meta.id,
         manifestPath: `${basePath || ''}/manifest.json`,
@@ -303,7 +304,8 @@ class Runtime {
     return {
       metas: [meta],
       diagnostics: {
-        sources: collected.statuses,
+        sources: collected.statuses.filter((status) => !status.skipped),
+        skipped: collected.statuses.filter((status) => status.skipped).map((status) => status.source),
         coverage: collected.coverage,
         combined: built.combined ? built.combined.value : null,
         cached: Boolean(payload.fromCache),
@@ -325,6 +327,8 @@ function applyResolved(work, resolved = {}) {
     mcSlug: resolved.mcSlug || null,
     faId: resolved.faId || null,
     faUrl: resolved.faUrl || null,
+    anilist: resolved.anilistId || null,
+    mal: resolved.malId || null,
   });
   if (resolved.mediaType && !merged.mediaType) merged.mediaType = resolved.mediaType;
   return merged;

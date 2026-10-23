@@ -70,6 +70,9 @@ const DEMO_TITLES = [
     rt: { critics: 97, audience: 96, criticsCount: 190, audienceCount: 12000, consensus: 'Visualmente preciosa y emocionalmente demoledora.' },
     mc: { meta: 79, user: 8.7, critics: 33, users: 1450 },
     fa: { rating: 8.3, votes: 78456, id: '660177' },
+    romajiTitle: 'Kimi no Na wa.',
+    anilist: { id: 21495, malId: 28851, score: 89, mean: 88, popularity: 128940, favourites: 45123, scoreRooms: 91234, trending: 4210, format: 'MOVIE', status: 'FINISHED', season: 'WINTER', seasonYear: 2016, episodes: 1, duration: 106 },
+    mal: { id: 28851, score: 8.85, scoredBy: 1420890, rank: 7, popularity: 30, members: 1899450, favorites: 66123, type: 'Movie', episodes: 1 },
   },
   {
     imdbId: 'tt12343534',
@@ -86,6 +89,9 @@ const DEMO_TITLES = [
     rt: { critics: 100, audience: 95, criticsCount: 12, audienceCount: 5400, consensus: '' },
     mc: { meta: 81, user: 8.2, critics: 6, users: 780 },
     fa: { rating: 8.0, votes: 24310, id: '963385' },
+    romajiTitle: 'Jujutsu Kaisen',
+    anilist: { id: 100166, malId: 41316, score: 84, mean: 83, popularity: 220345, favourites: 78912, scoreRooms: 245678, trending: 18900, format: 'TV', status: 'RELEASING', season: 'FALL', seasonYear: 2020, episodes: 24, duration: 24 },
+    mal: { id: 41316, score: 8.62, scoredBy: 2410234, rank: 8, popularity: 12, members: 4210345, favorites: 190234, type: 'TV', episodes: 24 },
   },
   {
     imdbId: 'tt0068646',
@@ -382,6 +388,152 @@ function notFound(url) {
   return { ok: false, status: 404, error: 'not_found', url, ms: 0 };
 }
 
+/* ------------------------------------------------------------------ anime */
+
+function anilistMedia(work) {
+  const a = work.anilist || {};
+  const slug = String(work.title || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  return {
+    id: a.id,
+    idMal: a.malId || (work.mal && work.mal.id) || null,
+    isAdult: false,
+    type: 'ANIME',
+    format: a.format || (work.type === 'movie' ? 'MOVIE' : 'TV'),
+    status: a.status || 'FINISHED',
+    season: a.season || null,
+    seasonYear: a.seasonYear || work.year,
+    source: 'MANGA',
+    episodes: a.episodes || null,
+    duration: a.duration || null,
+    title: { romaji: work.romajiTitle || work.title, english: work.title, native: work.title, userPreferred: work.romajiTitle || work.title },
+    coverImage: {
+      extraLarge: `https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx${a.id}-${slug}.jpg`,
+      large: `https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx${a.id}-${slug}.jpg`,
+      medium: `https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx${a.id}-${slug}.jpg`,
+      color: '#4b3f72',
+    },
+    bannerImage: `https://s4.anilist.co/file/anilistcdn/media/anime/banner/${a.id}-${slug}.jpg`,
+    averageScore: a.score ?? null,
+    meanScore: a.mean ?? null,
+    popularity: a.popularity || null,
+    trending: a.trending || null,
+    favourites: a.favourites || null,
+    genres: work.genres || [],
+    synonyms: [work.esTitle].filter(Boolean),
+    description: work.overview,
+    studios: { nodes: [{ name: 'CoMix Wave Films' }] },
+    nextAiringEpisode: (a.status || 'FINISHED') === 'RELEASING' ? { episode: 13, airingAt: Math.floor(Date.now() / 1000) + 86400, timeUntilAiring: 86400 } : null,
+    externalLinks: [{ url: `https://www.imdb.com/title/${work.imdbId}/`, site: 'imdb' }],
+    relations: { edges: [] },
+    stats: { scoreRooms: a.scoreRooms || null },
+  };
+}
+
+function anilistSearchOk(media, term) {
+  if (!term) return true;
+  const needle = String(term).toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').trim();
+  const titles = [media.title.romaji, media.title.english, media.title.native, ...(media.synonyms || [])].join(' ').toLowerCase().replace(/[^a-z0-9 ]+/g, ' ');
+  if (titles.includes(needle)) return true;
+  return needle.split(/\s+/).filter((w) => w.length > 3).some((word) => titles.includes(word));
+}
+
+function anilistSort(list, sort) {
+  const key = String(sort || 'SCORE_DESC');
+  const copy = list.slice();
+  if (key === 'POPULARITY_DESC') return copy.sort((a, b) => (b.popularity || 0) - (a.popularity || 0));
+  if (key === 'TRENDING_DESC') return copy.sort((a, b) => (b.trending || 0) - (a.trending || 0));
+  if (key === 'FAVOURITES_DESC' || key === 'FAVORITES_DESC') return copy.sort((a, b) => (b.favourites || 0) - (a.favourites || 0));
+  if (key === 'START_DATE_DESC') return copy.sort((a, b) => (b.seasonYear || 0) - (a.seasonYear || 0));
+  if (key === 'ID_DESC') return copy.sort((a, b) => b.id - a.id);
+  return copy.sort((a, b) => (b.averageScore || 0) - (a.averageScore || 0));
+}
+
+function anilistGraphQL(body, works) {
+  let payload;
+  try {
+    payload = typeof body === 'string' ? JSON.parse(body) : body;
+  } catch {
+    return { errors: [{ message: 'body no-JSON' }] };
+  }
+  const query = String(payload.query || '');
+  const vars = payload.variables || {};
+  const animeWorks = works.filter((w) => w.anilist);
+  const list = /Page\s*\(/.test(query);
+
+  if (!list) {
+    let work = null;
+    if (vars.id) work = animeWorks.find((w) => Number(w.anilist.id) === Number(vars.id));
+    if (!work && vars.idMal) work = animeWorks.find((w) => Number(w.anilist.malId) === Number(vars.idMal) || Number((w.mal || {}).id) === Number(vars.idMal));
+    if (!work && vars.search) work = animeWorks.find((w) => anilistSearchOk(anilistMedia(w), vars.search));
+    return { data: { Media: work ? anilistMedia(work) : null } };
+  }
+
+  let items = animeWorks.map(anilistMedia);
+  if (vars.search) items = items.filter((media) => anilistSearchOk(media, vars.search));
+  const bySeason = (list) =>
+    list
+      .filter((media) => !vars.status || media.status === vars.status)
+      .filter((media) => !vars.season || media.season === vars.season)
+      .filter((media) => !vars.seasonYear || media.seasonYear === Number(vars.seasonYear));
+  // en el demo solo hay dos títulos: si la temporada pedida no está, se ignoran
+  // esos filtros para que el catálogo no salga vacío
+  const filtered = bySeason(items);
+  items = filtered.length ? filtered : items.filter((media) => !vars.search || anilistSearchOk(media, vars.search));
+  if (vars.minScore) items = items.filter((media) => (media.averageScore || 0) >= Number(vars.minScore));
+  items = anilistSort(items, (vars.sort || [])[0]);
+  const perPage = Math.min(Number(vars.perPage) || 50, 50);
+  const page = Math.max(Number(vars.page) || 1, 1);
+  const slice = items.slice((page - 1) * perPage, page * perPage);
+  return { data: { Page: { pageInfo: { total: items.length, currentPage: page, lastPage: Math.ceil(items.length / perPage) || 1, hasNextPage: page * perPage < items.length, perPage }, media: slice } } };
+}
+
+function jikanEntry(work) {
+  const m = work.mal || {};
+  const a = work.anilist || {};
+  return {
+    mal_id: m.id || a.malId,
+    url: `https://myanimelist.net/anime/${m.id || a.malId}`,
+    title: work.romajiTitle || work.title,
+    title_english: work.title,
+    title_japanese: work.title,
+    type: m.type || (work.type === 'movie' ? 'Movie' : 'TV'),
+    episodes: m.episodes || a.episodes || null,
+    status: m.status || 'Finished Airing',
+    aired: { string: `${work.year} to ${work.year}`, prop: { from: { year: work.year, month: 1, day: 1 } } },
+    year: work.year,
+    score: m.score ?? null,
+    scored_by: m.scoredBy ?? null,
+    rank: m.rank ?? null,
+    popularity: m.popularity ?? null,
+    members: m.members ?? null,
+    favorites: m.favorites ?? null,
+    synopsis: work.overview,
+    background: null,
+    preview: null,
+    images: { jpg: { image_url: `https://cdn.myanimelist.net/images/anime/${m.id}/f.jpg`, large_image_url: `https://cdn.myanimelist.net/images/anime/${m.id}/l.jpg` } },
+    genres: (work.genres || []).map((name, index) => ({ mal_id: 10 + index, name })),
+  };
+}
+
+function malPageHtml(work) {
+  const m = work.mal || {};
+  return [
+    '<!doctype html><html><head>',
+    `<meta property="og:title" content="${esc(work.title)} (${work.year})" />`,
+    `<meta property="og:url" content="https://myanimelist.net/anime/${m.id}" />`,
+    `<meta property="og:image" content="https://cdn.myanimelist.net/images/anime/${m.id}/l.jpg" />`,
+    '</head><body>',
+    `<h1 class="title-name">${esc(work.title)}</h1>`,
+    `<span class="score-label font-bold text-black-2 d-i-block fl-l"> ${m.score}</span>`,
+    `<div class="spaceit_pad">Scored by <strong>(${esc(String(m.scoredBy))} users)</strong></div>`,
+    `<div class="spaceit_pad">Ranked<span> #${m.rank}</span> on MyAnimeList</div>`,
+    `<div class="spaceit_pad">Popularity<span> #${m.popularity}</span></div>`,
+    `<div class="spaceit_pad"><strong>${esc(String(m.members))}</strong> members</div>`,
+    '<p>Premiered Spring ' + work.year + ' in 2015 at 00:00 JST and has finished.</p>',
+    '</body></html>',
+  ].join('');
+}
+
 function createMockHttp(allWorks = DEMO_TITLES) {
   const works = allWorks.length ? allWorks : DEMO_TITLES;
 
@@ -546,6 +698,48 @@ function createMockHttp(allWorks = DEMO_TITLES) {
       });
     }
 
+
+    if (host === 'graphql.anilist.co') {
+      return hit(anilistGraphQL(options.data, works), 'application/json');
+    }
+
+    if (host === 'api.jikan.moe') {
+      const anime = path.match(/^\/v4\/anime\/(\d+)$/);
+      if (anime) {
+        const work = works.find((w) => w.mal && Number(w.mal.id) === Number(anime[1]));
+        return work ? hit({ data: jikanEntry(work) }, 'application/json') : hit({ status: 404, message: 'Not Found' }, 'application/json');
+      }
+      if (path === '/v4/anime') {
+        const query = String(search.q || '').toLowerCase();
+        const list = works.filter((w) => w.mal && (!query || anilistSearchOk(anilistMedia(w), query)));
+        return hit({ data: list.map(jikanEntry), pagination: { last_visible_page: 1, has_next_page: false, items: { count: list.length, total: list.length } } }, 'application/json');
+      }
+      if (path === '/v4/top/anime') {
+        let list = works.filter((w) => w.mal);
+        if (search.filter === 'bypopularity') list = list.slice().sort((a, b) => a.mal.popularity - b.mal.popularity);
+        else if (search.filter === 'favorite') list = list.slice().sort((a, b) => b.mal.favorites - a.mal.favorites);
+        else if (search.filter === 'airing') list = list.filter((w) => w.anilist && w.anilist.status === 'RELEASING');
+        else if (search.filter === 'upcoming') list = [];
+        else list = list.slice().sort((a, b) => b.mal.score - a.mal.score);
+        const data = list.map((work, index) => ({ rank: index + 1, entry: jikanEntry(work) }));
+        return hit({ data, pagination: { last_visible_page: 1, has_next_page: false, items: { count: data.length } } }, 'application/json');
+      }
+      if (path === '/v4/seasons/now') {
+        const list = works.filter((w) => w.mal && w.anilist && w.anilist.status === 'RELEASING');
+        return hit({ data: list.map(jikanEntry) }, 'application/json');
+      }
+      return notFound(url);
+    }
+
+    if (host === 'myanimelist.net') {
+      const anime = path.match(/^\/anime\/(\d+)/);
+      if (anime) {
+        const work = works.find((w) => w.mal && Number(w.mal.id) === Number(anime[1]));
+        return work ? hit(malPageHtml(work)) : notFound(url);
+      }
+      return notFound(url);
+    }
+
     return notFound(url);
   }
 
@@ -562,4 +756,4 @@ function createMockHttp(allWorks = DEMO_TITLES) {
   return { request, getJson, mock: true };
 }
 
-module.exports = { DEMO_TITLES, createMockHttp, rtSlug, mcSlug, matchesQuery, imdbTitleHtml, imdbListHtml, rtPageHtml, faFilmHtml, faSearchHtml, mcApiJson, tmdbDetailJson, tmdbSearchJson };
+module.exports = { DEMO_TITLES, createMockHttp, anilistMedia, jikanEntry, anilistGraphQL, rtSlug, mcSlug, matchesQuery, imdbTitleHtml, imdbListHtml, rtPageHtml, faFilmHtml, faSearchHtml, mcApiJson, tmdbDetailJson, tmdbSearchJson };

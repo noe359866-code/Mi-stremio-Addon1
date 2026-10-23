@@ -11,7 +11,7 @@
 
 const path = require('path');
 
-const ALL_SOURCES = ['imdb', 'rottentomatoes', 'metacritic', 'filmaffinity', 'tmdb'];
+const ALL_SOURCES = ['imdb', 'rottentomatoes', 'metacritic', 'filmaffinity', 'tmdb', 'anilist', 'mal'];
 
 /**
  * OJO: esta key de TMDB viene del proyecto previo del repo (está pública en
@@ -36,7 +36,7 @@ function envConfig(env = process.env) {
     .filter((item) => ALL_SOURCES.includes(item));
   return {
     // clave/identidad
-    addonName: env.ADDON_NAME || 'Puntuaciones · IMDb / RT / Metacritic / FilmAffinity / TMDB',
+    addonName: env.ADDON_NAME || 'Puntuaciones · IMDb / RT / Metacritic / FilmAffinity / TMDB + anime',
     addonDescription:
       env.ADDON_DESCRIPTION ||
       'Solo puntuaciones: Tomatometer, Metascore, IMDb, FilmAffinity y TMDB para pelis, series y anime. Cero streams, cero relleno.',
@@ -63,6 +63,10 @@ function envConfig(env = process.env) {
     tmdbToken: env.TMDB_API_TOKEN || env.TMDB_BEARER_TOKEN || '',
     omdbApiKey: env.OMDB_API_KEY || '',
     metacriticApiKey: env.METACRITIC_API_KEY || '',
+    // anime: MAL_CLIENT_ID activa la API oficial de MyAnimeList (si no, se usa Jikan)
+    malClientId: env.MAL_CLIENT_ID || env.MAL_CLIENT_KEY || '',
+    jikanBaseUrl: env.JIKAN_BASE_URL || '',
+    anilistEndpoint: env.ANILIST_GRAPHQL_URL || '',
     metacriticVersion: env.METACRITIC_API_VERSION || '4.2',
 
     // salida en Stremio

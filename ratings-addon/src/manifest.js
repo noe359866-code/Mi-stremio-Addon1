@@ -5,7 +5,7 @@
  *
  * Recursos:
  *   - catalog: las listas top de cada fuente (con la nota en el badge)
- *   - meta:    la ficha con el desglose de las 5 puntuaciones
+ *   - meta:    la ficha con el desglose de las 7 puntuaciones (5 general + 2 de anime)
  * No hay `stream`: este addon es 100 % metadatos/puntuaciones.
  */
 
@@ -14,7 +14,7 @@ const { SOURCES } = require('./defs');
 
 const VERSION = '1.0.0';
 const TYPES = ['movie', 'series', 'anime'];
-const ID_PREFIXES = ['tt', 'tmdb:', 'imdb:', 'rt:', 'mc:', 'fa:'];
+const ID_PREFIXES = ['tt', 'tmdb:', 'imdb:', 'rt:', 'mc:', 'fa:', 'anilist:', 'mal:'];
 
 function manifestFor({ cfg, origin, basePath = '' }) {
   const catalogs = catalogsFor(cfg).map((catalog) => ({
@@ -54,8 +54,8 @@ function manifestFor({ cfg, origin, basePath = '' }) {
         type: 'select',
         label: 'Fuentes a scrapear',
         default: 'all',
-        options: ['all', 'imdb', 'imdb+tmdb', 'rt+mc', 'fa'],
-        optionsValues: ['all', 'imdb,tmdb', 'imdb,rottentomatoes,metacritic', 'imdb,filmaffinity'],
+        options: ['all', 'imdb', 'imdb+tmdb', 'rt+mc', 'fa', 'anime (anilist+mal)'],
+        optionsValues: ['all', 'imdb,tmdb', 'imdb,rottentomatoes,metacritic', 'imdb,filmaffinity', 'anilist,mal,tmdb'],
         description: 'Selecciona de qué webs se sacan las notas.',
       },
       {
@@ -63,8 +63,8 @@ function manifestFor({ cfg, origin, basePath = '' }) {
         type: 'select',
         label: 'Nota del badge (⭐ en Stremio)',
         default: 'combined',
-        options: ['Combinada', 'IMDb', 'Rotten Tomatoes', 'Metacritic', 'FilmAffinity', 'TMDB'],
-        optionsValues: ['combined', 'imdb', 'rt_tomatometer', 'mc_metascore', 'filmaffinity', 'tmdb'],
+        options: ['Combinada', 'IMDb', 'Rotten Tomatoes', 'Metacritic', 'FilmAffinity', 'MyAnimeList', 'AniList', 'TMDB'],
+        optionsValues: ['combined', 'imdb', 'rt_tomatometer', 'mc_metascore', 'filmaffinity', 'mal', 'anilist', 'tmdb'],
       },
       { key: 'panel', type: 'boolean', label: 'Mostrar desglose en la descripción', default: true },
       { key: 'unavailable', type: 'boolean', label: 'Marcar las fuentes sin datos', default: true },
