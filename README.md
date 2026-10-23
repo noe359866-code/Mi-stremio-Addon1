@@ -1,29 +1,42 @@
 # Mi-stremio-Addon1
 
-Addons propios para Stremio. Dos proyectos independientes en el mismo repo:
+Addons propios para Stremio. Dos proyectos independientes en el mismo repositorio:
 
 | Carpeta | Qué hace | Arranque |
 | --- | --- | --- |
 | [`Mi Projecto/`](Mi%20Projecto/) | Addon de **streams** (Vimeos + respaldo Cuevana/La Movie), función de Netlify | `Mi Projecto/stremio.js` (`exports.handler`) |
-| [`ratings-addon/`](ratings-addon/) | Addon de **solo puntuaciones**: IMDb · Rotten Tomatoes · Metacritic · FilmAffinity · TMDB + AniList y MyAnimeList para anime. Sin dependencias, con modo demo, 24 catálogos (6 de anime), ficha con desglose y API JSON | `cd ratings-addon && npm run demo` |
+| [`ratings-addon/`](ratings-addon/) | **Envuelve los catálogos que ya usas** y añade puntuaciones: badge nativo de Stremio y pósters con las notas dibujadas. Cinemeta viene configurado y puedes añadir otros addons por URL de manifiesto | `cd ratings-addon && npm run demo` |
 
-El addon de puntuaciones no toca los streams: añade notas (badge `⭐ 8.4`) y listas top a
-Discover. Documentación completa, despliegue (Netlify/Vercel/Docker) y advertencias de
-anti-bot en [`ratings-addon/README.md`](ratings-addon/README.md).
+## Qué hace el addon de puntuaciones
 
-## Publicar el addon de puntuaciones en Netlify
+- Reutiliza el contenido, el orden y los IDs de **Cinemeta** y de otros addons que indiques.
+- **No publica las antiguas listas top propias**: no crea 24 filas nuevas ni duplica Discover.
+- Puede mostrar una nota combinada en el campo nativo `imdbRating` (⭐ en la tarjeta).
+- Puede sustituir la imagen por un póster generado con hasta seis puntuaciones visibles.
+- Mantiene las fichas, descripciones, enlaces y búsqueda del addon original; añade el desglose de IMDb, TMDB, Rotten Tomatoes, Metacritic, FilmAffinity y, para anime, AniList/MAL.
+- No proporciona streams.
+
+> **Importante:** Stremio no permite editar directamente las respuestas de otro addon. Este addon las vuelve a servir ya mejoradas. Después de instalar el manifiesto envuelto, **desactiva o desinstala los addons originales que hayas envuelto** para no ver sus filas dos veces.
+
+## Publicar en Netlify
 
 1. En Netlify: **Add new site → Import an existing project → GitHub** y elige este repositorio.
-2. Deja **Base directory vacío** y **Build command vacío**. El [`netlify.toml`](netlify.toml)
-   de la raíz ya configura la función y las rutas de Stremio.
-3. Pulsa **Deploy site** y abre `https://<tu-sitio>.netlify.app/manifest.json`.
-   Si responde un JSON con `id`, `resources` y `catalogs`, instala esa misma URL en Stremio.
-4. La página `https://<tu-sitio>.netlify.app/configure.html` permite configurarlo e instalarlo.
+2. Deja **Base directory vacío**. No hace falta escribir un comando manual: el [`netlify.toml`](netlify.toml) de la raíz configura `ratings-addon` como base, ejecuta `npm ci`, empaqueta la función e incluye los binarios nativos de `sharp` con Node 22.
+3. Pulsa **Deploy site** y abre `https://<tu-sitio>.netlify.app/manifest.json`. Debe responder JSON con `id`, `resources` y `catalogs`.
+4. Abre `https://<tu-sitio>.netlify.app/configure.html`:
+   - deja Cinemeta o pega las URLs `/manifest.json` de los addons que quieras envolver;
+   - activa el badge nativo, el póster con notas o ambos;
+   - instala el manifiesto generado;
+   - desactiva los originales para evitar duplicados.
+5. Opcionalmente, configura tus claves de TMDB/OMDb en **Site settings → Environment variables** y ejecuta:
 
-Si el sitio ya existía y tenía **Base directory = `ratings-addon`**, también es válido;
-Netlify usará la configuración alternativa de esa carpeta. Tras actualizar el código, haz
-**Deploys → Trigger deploy → Clear cache and retry**.
+   ```bash
+   cd ratings-addon
+   npm run verify -- https://<tu-sitio>.netlify.app
+   ```
 
-> Netlify no publica el addon como una web estática: lo ejecuta mediante una **Netlify
-> Function**. Cada addon del repositorio necesita su propio sitio; la configuración de la
-> raíz corresponde al addon de puntuaciones, no al de streams de `Mi Projecto`.
+Si el sitio ya existía con **Base directory = `ratings-addon`**, también se admite mediante la configuración de esa carpeta. Tras cambiar ajustes de build usa **Deploys → Trigger deploy → Clear cache and retry**.
+
+> Cada addon del repositorio necesita su propio sitio de Netlify. La configuración de la raíz corresponde al wrapper de puntuaciones, no al addon de streams de `Mi Projecto`.
+
+Documentación técnica, variables, API, límites y solución de problemas: [`ratings-addon/README.md`](ratings-addon/README.md).

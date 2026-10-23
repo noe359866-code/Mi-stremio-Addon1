@@ -534,6 +534,38 @@ function malPageHtml(work) {
   ].join('');
 }
 
+const MOCK_POSTER = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64');
+
+function mockCinemetaManifest() {
+  return {
+    id: 'com.linvo.cinemeta', version: '3.0.14', name: 'Cinemeta', description: 'Catálogo oficial simulado',
+    resources: ['catalog', 'meta', 'addon_catalog'], types: ['movie', 'series'], idPrefixes: ['tt'],
+    catalogs: [
+      { type: 'movie', id: 'top', name: 'Popular', extra: [{ name: 'search' }, { name: 'skip' }] },
+      { type: 'series', id: 'top', name: 'Popular', extra: [{ name: 'search' }, { name: 'skip' }] },
+    ],
+    addonCatalogs: [{ type: 'all', id: 'official', name: 'Official' }],
+  };
+}
+
+function mockCustomManifest() {
+  return {
+    id: 'community.custom.catalog', version: '1.0.0', name: 'Mi catálogo personalizado', description: 'Otro addon simulado',
+    resources: ['catalog', { name: 'meta', types: ['movie'], idPrefixes: ['custom:'] }],
+    types: ['movie'], idPrefixes: ['custom:'],
+    catalogs: [{ type: 'movie', id: 'custom-list', name: 'Mis películas', extra: [{ name: 'search' }] }],
+  };
+}
+
+function mockPreview(work) {
+  return {
+    id: work.imdbId, imdb_id: work.imdbId, moviedb_id: work.tmdbId, type: work.type,
+    name: work.title, year: String(work.year), releaseInfo: String(work.year),
+    poster: `https://images.metahub.space/poster/small/${work.imdbId}/img`,
+    description: `Sinopsis upstream de ${work.title}`, imdbRating: String(work.imdb.value),
+  };
+}
+
 function createMockHttp(allWorks = DEMO_TITLES) {
   const works = allWorks.length ? allWorks : DEMO_TITLES;
 
@@ -542,7 +574,48 @@ function createMockHttp(allWorks = DEMO_TITLES) {
     const search = Object.assign(Object.fromEntries(full.searchParams.entries()), options.query || {});
     const host = full.host;
     const path = full.pathname.replace(/\/+$/, '') || '/';
-    const hit = (body, contentType = 'text/html; charset=utf-8') => ({ ok: true, status: 200, body: typeof body === 'string' ? body : JSON.stringify(body), contentType, url, ms: 1 });
+    const hit = (body, contentType = 'text/html; charset=utf-8') => {
+      if (options.raw) {
+        const raw = Buffer.isBuffer(body) ? body : Buffer.from(typeof body === 'string' ? body : JSON.stringify(body));
+        return { ok: true, status: 200, body: raw, contentType, url, ms: 1 };
+      }
+      return { ok: true, status: 200, body: typeof body === 'string' ? body : JSON.stringify(body), contentType, url, ms: 1 };
+    };
+
+    if (host === 'v3-cinemeta.strem.io' || host === 'cinemeta-catalogs.strem.io') {
+      if (path === '/manifest.json' || path === '/top/manifest.json') return hit(mockCinemetaManifest(), 'application/json');
+      const catalog = path.match(/(?:^|\/)catalog\/(movie|series)\/top(?:\.json|\/)/);
+      if (catalog) {
+        const wanted = works.filter((work) => work.type === catalog[1]).slice(0, 4);
+        const extraSearch = path.match(/[/?]search(?:%3D|=)([^&/]+)/i);
+        const query = String(search.search || (extraSearch ? decodeURIComponent(extraSearch[1]).replace(/\.json$/i, '').replace(/\+/g, ' ') : '')).toLowerCase();
+        const skipMatch = path.match(/\/(\d+)\.json$/);
+        const skip = Number(search.skip || (skipMatch && skipMatch[1]) || 0);
+        const filtered = wanted.filter((work) => !query || work.title.toLowerCase().includes(query));
+        return hit({ metas: filtered.slice(skip).map(mockPreview) }, 'application/json');
+      }
+      const meta = path.match(/(?:^|\/)meta\/(movie|series)\/(tt\d{6,10})\.json$/);
+      if (meta) {
+        const work = works.find((entry) => entry.imdbId === meta[2]);
+        if (!work) return hit({ meta: null }, 'application/json');
+        return hit({ meta: { ...mockPreview(work), links: [{ name: 'Compartir', category: 'share', url: `https://www.strem.io/s/${work.type}/${work.imdbId}` }], videos: [] } }, 'application/json');
+      }
+      if (path.includes('/addon_catalog/')) return hit({ addons: [] }, 'application/json');
+      return notFound(url);
+    }
+
+    if (host === 'custom.addon.test') {
+      if (path === '/manifest.json') return hit(mockCustomManifest(), 'application/json');
+      if (path.startsWith('/catalog/movie/custom-list')) {
+        return hit({ metas: [{ id: 'custom:inception', type: 'movie', name: 'Inception', year: '2010', poster: 'https://images.metahub.space/poster/small/tt1375606/img', description: 'Catálogo de otro addon' }] }, 'application/json');
+      }
+      if (path === '/meta/movie/custom:inception.json') {
+        return hit({ meta: { id: 'custom:inception', type: 'movie', name: 'Inception', year: '2010', poster: 'https://images.metahub.space/poster/small/tt1375606/img', description: 'Ficha de otro addon' } }, 'application/json');
+      }
+      return notFound(url);
+    }
+
+    if (host === 'images.metahub.space' && options.raw) return hit(MOCK_POSTER, 'image/png');
 
     if (host === 'api.themoviedb.org') {
       const find = path.match(/^\/3\/find\/(tt\d{6,10})$/);

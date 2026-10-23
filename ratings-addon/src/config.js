@@ -12,6 +12,13 @@
 const path = require('path');
 
 const ALL_SOURCES = ['imdb', 'rottentomatoes', 'metacritic', 'filmaffinity', 'tmdb', 'anilist', 'mal'];
+const CINEMETA_MANIFEST = 'https://v3-cinemeta.strem.io/manifest.json';
+
+function upstreamList(value, fallback = [CINEMETA_MANIFEST]) {
+  const list = Array.isArray(value) ? value : String(value || '').split(/[\n,;]+/);
+  const clean = list.map((item) => String(item).trim()).filter(Boolean).slice(0, 6);
+  return clean.length ? Array.from(new Set(clean)) : fallback.slice();
+}
 
 /**
  * OJO: esta key de TMDB viene del proyecto previo del repo (está pública en
@@ -36,10 +43,17 @@ function envConfig(env = process.env) {
     .filter((item) => ALL_SOURCES.includes(item));
   return {
     // clave/identidad
-    addonName: env.ADDON_NAME || 'Puntuaciones · IMDb / RT / Metacritic / FilmAffinity / TMDB + anime',
+    addonName: env.ADDON_NAME || 'Puntuaciones en tus pósters',
     addonDescription:
       env.ADDON_DESCRIPTION ||
-      'Solo puntuaciones: Tomatometer, Metascore, IMDb, FilmAffinity y TMDB para pelis, series y anime. Cero streams, cero relleno.',
+      'Mejora los catálogos que ya usas: nota nativa de Stremio y pósters con IMDb, Rotten Tomatoes, Metacritic, FilmAffinity y TMDB.',
+
+    // Catálogos existentes que se envuelven. No se publican listas propias.
+    upstreams: upstreamList(env.UPSTREAM_MANIFEST_URLS || env.UPSTREAM_MANIFEST_URL),
+    nativeBadge: bool(env.WRAP_NATIVE_BADGE, true),
+    posterOverlay: bool(env.WRAP_POSTER_OVERLAY, true),
+    catalogTimeBudgetMs: num(env.WRAP_CATALOG_TIME_BUDGET_MS, 4000),
+    catalogConcurrency: Math.max(1, Math.min(12, num(env.WRAP_CATALOG_CONCURRENCY, 6))),
 
     // fuentes
     sources: sources.length ? sources : ALL_SOURCES.slice(),
@@ -126,6 +140,13 @@ function applyUserConfig(cfg, userConfig = {}) {
   if (userConfig.ttl !== undefined) out.cacheTtlHours = num(userConfig.ttl, 24);
   if (userConfig.lang) out.language = String(userConfig.lang);
   if (userConfig.language) out.language = String(userConfig.language);
+  if (userConfig.upstreams !== undefined) {
+    const requested = upstreamList(userConfig.upstreams, []);
+    if (requested.length) out.upstreams = requested;
+  }
+  if (userConfig.nativeBadge !== undefined) out.nativeBadge = bool(userConfig.nativeBadge, true);
+  if (userConfig.posterOverlay !== undefined) out.posterOverlay = bool(userConfig.posterOverlay, true);
+  if (userConfig.catalogTimeBudgetMs !== undefined) out.catalogTimeBudgetMs = Math.max(0, Math.min(7000, num(userConfig.catalogTimeBudgetMs, out.catalogTimeBudgetMs)));
   if (userConfig.weights && typeof userConfig.weights === 'object') {
     for (const [key, value] of Object.entries(userConfig.weights)) {
       const parsed = Number(value);
@@ -153,4 +174,4 @@ function load(env = process.env) {
   return { ...base, ...derived(base) };
 }
 
-module.exports = { load, envConfig, applyUserConfig, derived, ALL_SOURCES, FALLBACK_TMDB_KEY, bool, num };
+module.exports = { load, envConfig, applyUserConfig, derived, ALL_SOURCES, CINEMETA_MANIFEST, upstreamList, FALLBACK_TMDB_KEY, bool, num };

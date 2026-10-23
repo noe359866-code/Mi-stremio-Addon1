@@ -33,7 +33,7 @@ test('el manifiesto pasa el linter oficial de Stremio', { skip: linter ? false :
   const result = linter.lintManifest(manifest);
   assert.equal(result.valid, true, `errores: ${(result.errors || []).join(' | ')}`);
   assert.deepEqual((result.warnings || []).map((w) => w.message || w), [], 'sin avisos');
-  assert.ok(JSON.stringify(manifest).length <= 8192, 'por debajo del límite de 8 KB del addonCollection');
+  assert.ok(!manifest.catalogs.some((catalog) => /imdb-top|rt-top|mc-top/.test(catalog.id)), 'sin listas propias');
 });
 
 test('el manifiesto configurado (/c/<token>) también pasa el linter', { skip: linter ? false : 'instala stremio-addon-linter' }, async () => {
@@ -41,7 +41,7 @@ test('el manifiesto configurado (/c/<token>) también pasa el linter', { skip: l
   const manifest = await manifestFor(token);
   const result = linter.lintManifest(manifest);
   assert.equal(result.valid, true, (result.errors || []).join(' | '));
-  assert.ok(manifest.catalogs.length < 18, 'menos fuentes -> menos catálogos');
+  assert.deepEqual(manifest.catalogs.map((catalog) => `${catalog.type}/${catalog.id}`), ['movie/top', 'series/top'], 'las fuentes no cambian las filas envueltas');
 });
 
 test('formas de respuesta que espera Stremio (metas / meta)', async () => {

@@ -8,14 +8,15 @@
 [build]
   base = "ratings-addon"
   functions = "netlify/functions"
-  command = ""            # no hay build: código suelto, cero dependencias de runtime
-  publish = "netlify/pub" # carpeta vacía a propósito: así ninguna fuente es pública
+  command = "npm ci --no-audit --no-fund" # instala sharp para generar los pósters
+  publish = "netlify/pub"                # carpeta vacía: ninguna fuente es pública
 
 [functions]
   # OBLIGATORIO aquí: la función hace require('../../src/app') — archivos fuera de
   # netlify/functions/. Sin esbuild, Netlify empaqueta solo la carpeta de funciones
   # y en runtime petaría con MODULE_NOT_FOUND.
   node_bundler = "esbuild"
+  external_node_modules = ["sharp"]
 
 [build.environment]
   NODE_VERSION = "22"

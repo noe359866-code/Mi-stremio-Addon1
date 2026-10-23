@@ -6,7 +6,6 @@
  * probar el scraper en vivo contra cualquier título.
  */
 
-const { CATALOGS } = require('./catalog');
 const { SOURCES, METRICS } = require('./defs');
 const { escapeHtml } = require('./util');
 const { VERSION } = require('./manifest');
@@ -33,8 +32,9 @@ label.row input{margin-top:3px;accent-color:var(--accent)}
 .src-desc{color:var(--dim);font-size:12px}
 .field{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:7px 0;border-bottom:1px dashed #1e2740}
 .field:last-child{border-bottom:0}
-select,input[type=number],input[type=text]{background:#0b1020;color:var(--txt);border:1px solid var(--line);border-radius:9px;padding:7px 9px;font:inherit;min-width:120px}
+select,input[type=number],input[type=text],textarea{background:#0b1020;color:var(--txt);border:1px solid var(--line);border-radius:9px;padding:7px 9px;font:inherit;min-width:120px}
 input[type=text]{width:100%;min-width:0}
+textarea{display:block;width:100%;min-height:104px;resize:vertical;font:12px/1.55 ui-monospace,Menlo,Consolas,monospace}
 button{background:var(--accent);color:#161300;border:0;border-radius:11px;padding:11px 15px;font-weight:750;font-size:14px;cursor:pointer}
 button.sec{background:#1b2338;color:var(--txt);border:1px solid var(--line);font-weight:600}
 button.ghost{background:transparent;color:var(--dim);border:1px dashed var(--line)}
@@ -81,12 +81,14 @@ function b64url(str){ return btoa(unescape(encodeURIComponent(str))).replace(/\\
 function cfgFromForm(){
   var sources = $all('input[data-src]:checked').map(function(i){ return i.dataset.src; });
   return {
+    upstreams: $('#upstreams').value.split(/\\n+/).map(function(v){ return v.trim(); }).filter(Boolean),
+    nativeBadge: $('#nativeBadge').checked,
+    posterOverlay: $('#posterOverlay').checked,
     sources: sources,
     badge: $('#badge').value,
     panel: $('#panel').checked,
     unavailable: $('#unavailable').checked,
     links: $('#links').checked,
-    minScore: Number($('#minScore').value || 0),
     ttl: Number($('#ttl').value || 24),
     lang: $('#lang').value
   };
@@ -192,7 +194,7 @@ async function health(){
 }
 document.addEventListener('DOMContentLoaded', function(){
   $all('input[data-src]').forEach(function(i){ i.onchange = refresh; });
-  ['#badge','#panel','#unavailable','#links','#minScore','#ttl','#lang'].forEach(function(sel){ var el=$(sel); if(el) el.onchange = refresh; });
+  ['#upstreams','#nativeBadge','#posterOverlay','#badge','#panel','#unavailable','#links','#ttl','#lang'].forEach(function(sel){ var el=$(sel); if(el) el.onchange = refresh; });
   $('#install').onclick = function(e){ e.preventDefault(); installToStremio(); };
   $('#manual').onclick = function(){ this.href = 'stremio://' + bare(manifestUrl()); };
   $('#copy').onclick = copyUrl;
@@ -216,7 +218,7 @@ function sourceRows(cfg) {
     .join('');
 }
 
-function configureHtml({ cfg, origin, basePath = '' }) {
+function configureHtml({ cfg, origin, basePath = '', catalogs = [] }) {
   const metricOptions = ['combined', ...Object.keys(METRICS)]
     .map((key) => {
       const label = key === 'combined' ? 'Combinada (media ponderada)' : `${METRICS[key].emoji} ${METRICS[key].label}`;
@@ -252,13 +254,21 @@ function configureHtml({ cfg, origin, basePath = '' }) {
   <div class="grid">
     <div>
       <section class="card">
-        <h2>1 · Fuentes a scrapear</h2>
+        <h2>1 · Catálogos existentes que quieres mejorar</h2>
+        <p class="small">Cinemeta ya está incluido. Si quieres mejorar otro addon de catálogos/metadatos, pega su URL de <code>manifest.json</code> en una línea nueva. No añadas addons que solo den streams.</p>
+        <textarea id="upstreams" spellcheck="false" aria-label="URLs de manifiestos upstream">${escapeHtml((cfg.upstreams || []).join('\n'))}</textarea>
+        <div class="field"><span class="small">Nota ⭐ nativa en las tarjetas</span><input type="checkbox" id="nativeBadge" ${cfg.nativeBadge ? 'checked' : ''} /></div>
+        <div class="field"><span class="small">Notas dibujadas sobre el póster</span><input type="checkbox" id="posterOverlay" ${cfg.posterOverlay ? 'checked' : ''} /></div>
+        <div class="notice">Esto <b>reutiliza los catálogos originales</b>; no crea nuestras 24 listas top. Después de instalar esta versión, desactiva los addons originales que hayas envuelto para no ver filas duplicadas. Las URLs viajan codificadas, no cifradas: no pegues enlaces privados con secretos.</div>
+      </section>
+
+      <section class="card">
+        <h2>2 · Fuentes a scrapear</h2>
         ${sourceRows(cfg)}
         <div class="field"><span class="small">Badge ⭐ de Stremio</span><select id="badge">${metricOptions}</select></div>
         <div class="field"><span class="small">Desglose en la ficha</span><input type="checkbox" id="panel" ${cfg.showPanel ? 'checked' : ''} /></div>
         <div class="field"><span class="small">Marcar fuentes sin datos</span><input type="checkbox" id="unavailable" ${cfg.showUnavailable ? 'checked' : ''} /></div>
         <div class="field"><span class="small">Enlaces a cada ficha</span><input type="checkbox" id="links" ${cfg.showLinks ? 'checked' : ''} /></div>
-        <div class="field"><span class="small">Nota mínima en catálogos</span><input type="number" id="minScore" min="0" max="10" step="0.5" value="${cfg.minScore}" /></div>
         <div class="field"><span class="small">Cache (horas)</span><input type="number" id="ttl" min="1" max="336" value="${cfg.cacheTtlHours}" /></div>
         <div class="field"><span class="small">Idioma TMDB</span><select id="lang">
           <option value="es-ES" ${cfg.language === 'es-ES' ? 'selected' : ''}>es-ES</option>
@@ -268,7 +278,7 @@ function configureHtml({ cfg, origin, basePath = '' }) {
       </section>
 
       <section class="card">
-        <h2>2 · Instalar en Stremio</h2>
+        <h2>3 · Instalar en Stremio</h2>
         <div class="row2"><button id="install">➕ Instalar addon</button><button id="copy" class="sec">Copiar URL</button>
         <a class="sec" id="manual" href="#" style="padding:11px 12px;border:1px solid var(--line);border-radius:11px;font-size:14px">stremio://</a></div>
         <p class="small" id="install-status" style="margin:9px 0"></p>
@@ -278,7 +288,7 @@ function configureHtml({ cfg, origin, basePath = '' }) {
       </section>
 
       <section class="card">
-        <h2>3 · Probador de puntuaciones</h2>
+        <h2>4 · Probador de puntuaciones</h2>
         <input type="text" id="q" placeholder="Origen, Breaking Bad, Jujutsu Kaisen…" />
         <div class="row2" style="margin-top:9px">
           <select id="stype"><option value="movie">película</option><option value="series">serie</option><option value="anime">anime</option></select>
@@ -301,8 +311,8 @@ function configureHtml({ cfg, origin, basePath = '' }) {
         <div id="out"><div class="notice">Elige una fuente arriba y dale a <b>Buscar</b>. Cada fuente muestra su estado (✓ ok / ✕ caída) para que sepas si IMDb te está bloqueando o si simplemente no hay datos.</div></div>
       </section>
       <section class="card">
-        <h2>Catálogos (Discover de Stremio)</h2>
-        <div class="small">Pulsa una lista para verla tal cual la recibiría Stremio:</div>
+        <h2>Catálogos reutilizados</h2>
+        <div class="small">Estas filas vienen de los addons elegidos arriba. Pulsa una para comprobar el badge y la URL del póster mejorado:</div>
         <div id="catlist" class="chips" style="margin:8px 0 12px"></div>
         <div id="cat-out"><div class="status">…</div></div>
       </section>
@@ -319,7 +329,7 @@ function configureHtml({ cfg, origin, basePath = '' }) {
 </div>
 <script>
 window.__BASE__ = ${JSON.stringify(basePath || '')};
-window.__CATALOGS__ = ${JSON.stringify(CATALOGS.filter((catalog) => cfg.sources.includes(catalog.provider) || cfg.sources.length === Object.keys(SOURCES).length).map(({ type, id, name }) => ({ type, id, name })))};
+window.__CATALOGS__ = ${JSON.stringify(catalogs.map(({ type, id, name }) => ({ type, id, name })))};
 window.__METRICS__ = ${JSON.stringify(
     Object.fromEntries(Object.entries(METRICS).map(([key, def]) => [key, { label: def.label, emoji: def.emoji, scale: def.scale }]))
   )};

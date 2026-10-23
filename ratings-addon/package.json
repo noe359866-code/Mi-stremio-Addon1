@@ -1,7 +1,7 @@
 {
   "name": "stremio-ratings-addon",
-  "version": "1.0.0",
-  "description": "Addon de Stremio que solo scrapea PUNTUACIONES (IMDb, Rotten Tomatoes, TMDB, FilmAffinity, Metacritic) para pelis, series y anime.",
+  "version": "2.0.0",
+  "description": "Envuelve catálogos existentes de Stremio y añade puntuaciones nativas y pósters con notas de IMDb, Rotten Tomatoes, Metacritic, FilmAffinity, TMDB y anime.",
   "main": "server.js",
   "type": "commonjs",
   "scripts": {
@@ -28,7 +28,9 @@
   "engines": {
     "node": ">=18.17"
   },
-  "dependencies": {},
+  "dependencies": {
+    "sharp": "^0.35.5"
+  },
   "devDependencies": {
     "stremio-addon-linter": "^1.7.0"
   }

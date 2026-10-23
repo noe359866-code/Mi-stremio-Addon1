@@ -25,19 +25,20 @@ test('manifest.json: recursos, tipos, catálogos y config de Stremio', async () 
   const manifest = await jsonOf('/manifest.json');
   assert.equal(manifest.id, 'community.ratings.scraper');
   assert.match(manifest.version, /^\d+\.\d+\.\d+$/);
-  assert.deepEqual(manifest.types.sort(), ['anime', 'movie', 'series']);
+  assert.deepEqual(manifest.types.sort(), ['movie', 'series'], 'Cinemeta no publica un tipo anime separado');
   assert.ok(manifest.idPrefixes.includes('tt'), 'Stremio nos llamará con ids tt…');
   const resources = manifest.resources.map((resource) => resource.name).sort();
   assert.deepEqual(resources, ['catalog', 'meta'], 'solo metadatos: nada de streams');
   const metaResource = manifest.resources.find((resource) => resource.name === 'meta');
-  assert.ok(metaResource.types.includes('movie') && metaResource.types.includes('series') && metaResource.types.includes('anime'));
+  assert.ok(metaResource.types.includes('movie') && metaResource.types.includes('series'));
 
-  assert.ok(manifest.catalogs.length >= 15);
+  assert.deepEqual(manifest.catalogs.map((catalog) => `${catalog.type}/${catalog.id}`), ['movie/top', 'series/top']);
+  assert.ok(!manifest.catalogs.some((catalog) => /imdb-top|rt-top|mc-top/.test(catalog.id)), 'ninguna lista propia');
   for (const catalog of manifest.catalogs) {
-    assert.ok(['movie', 'series', 'anime'].includes(catalog.type), catalog.type);
+    assert.ok(['movie', 'series'].includes(catalog.type), catalog.type);
     assert.ok(/^[a-z0-9-]+$/.test(catalog.id), `id de catálogo inválido: ${catalog.id}`);
     assert.ok(catalog.name.length > 3);
-    assert.ok(catalog.extra.some((extra) => extra.name === 'search'), 'los catálogos deben permitir búsqueda');
+    assert.ok(catalog.extra.some((extra) => extra.name === 'search'), 'conserva la búsqueda upstream');
   }
   assert.ok(manifest.logo.endsWith('/logo.svg'));
   assert.equal(manifest.behaviorHints.configurable, true);
@@ -125,9 +126,10 @@ test('/meta/tt… : ficha con las 5 fuentes, badge, enlaces y descripción', asy
   }
   assert.match(description, /PUNTUACIONES/);
   assert.match(description, /·/);
-  assert.ok(meta.links.length >= 4, 'un enlace por fuente con url');
-  assert.ok(meta.links.every((link) => link.category === 'Puntuaciones' || link.category === 'Fuentes'));
-  assert.ok(meta.poster.includes('image.tmdb.org'), 'póster desde TMDB');
+  assert.ok(meta.links.length >= 4, 'enlaces originales + enlaces por fuente');
+  assert.ok(meta.links.some((link) => link.category === 'share'), 'conserva los enlaces upstream');
+  assert.ok(meta.links.some((link) => link.category === 'Puntuaciones'));
+  assert.ok(meta.poster.includes('/poster/'), 'póster con puntuaciones generado por el addon');
   assert.ok(meta.description.length <= 3000);
 });
 
@@ -144,12 +146,13 @@ test('/meta funciona con ids alternativos (tmdb:, rt:, fa:) y con series', async
   assert.match(anime.meta.description, /Tomatometer 100%/);
 });
 
-test('config por URL (/c/<base64>): activa fuentes, cambia el badge y recorta catálogos', async () => {
+test('config por URL (/c/<base64>): activa fuentes y cambia badge sin alterar los catálogos envueltos', async () => {
   const token = base64UrlEncode({ sources: ['imdb'], badge: 'imdb', panel: true, unavailable: false });
   const manifest = await jsonOf(`/c/${token}/manifest.json`);
   assert.deepEqual(
     manifest.catalogs.map((catalog) => `${catalog.type}/${catalog.id}`).sort(),
-    ['anime/imdb-top', 'movie/imdb-top', 'series/imdb-top']
+    ['movie/top', 'series/top'],
+    'las fuentes cambian las notas, no las filas del addon original'
   );
   const meta = await jsonOf(`/c/${token}/meta/movie/tt1375606.json`);
   assert.equal(meta.meta.imdbRating, '8.8', 'badge = IMDb puro');

@@ -124,9 +124,10 @@ test('Netlify: el manifiesto es idéntico en las 3 formas de path que se pueden 
 });
 
 test('Netlify: catálogo, ficha, API y página de configuración por proxy', async () => {
-  const catalog = await viaNetlify(netlifyEvent({ path: '/catalog/movie/imdb-top.json' }));
+  const catalog = await viaNetlify(netlifyEvent({ path: '/catalog/movie/top.json' }));
   assert.equal(catalog.statusCode, 200);
   assert.ok(Array.isArray(catalog.parsed.metas) && catalog.parsed.metas.length > 0);
+  assert.match(catalog.parsed.metas[0].poster, /\/poster\//, 'el catálogo upstream recibe pósters mejorados');
   assert.match(catalog.headers['Cache-Control'], /max-age=/, 'los catálogos se pueden cachear');
 
   const meta = await viaNetlify(netlifyEvent({ path: '/meta/movie/tt1375606.json' }));
@@ -146,22 +147,22 @@ test('Netlify: catálogo, ficha, API y página de configuración por proxy', asy
   assert.equal(health.parsed.ok, true);
 });
 
-test('Netlify: buscar desde Discover (extras como segmento de ruta) filtra el catálogo', async () => {
-  const encoded = await viaNetlify(netlifyEvent({ path: '/catalog/movie/imdb-top/search%3Dinception.json' }));
+test('Netlify: buscar desde Discover (extras como segmento de ruta) filtra el catálogo envuelto', async () => {
+  const encoded = await viaNetlify(netlifyEvent({ path: '/catalog/movie/top/search%3Dinception.json' }));
   assert.equal(encoded.statusCode, 200);
   assert.equal(encoded.parsed.metas.length, 1);
   assert.match(encoded.parsed.metas[0].name, /Inception/);
 
-  const amp = await viaNetlify(netlifyEvent({ path: '/catalog/movie/imdb-top/search=shawsank&skip=0.json' }));
+  const amp = await viaNetlify(netlifyEvent({ path: '/catalog/movie/top/search=shawsank&skip=0.json' }));
   assert.ok(Array.isArray(amp.parsed.metas), 'varios extras en un segmento no rompen nada');
 
-  const byQuery = await viaNetlify(netlifyEvent({ path: '/catalog/movie/imdb-top.json', search: 'search=inception' }));
+  const byQuery = await viaNetlify(netlifyEvent({ path: '/catalog/movie/top.json', search: 'search=inception' }));
   assert.equal(byQuery.parsed.metas.length, 1, '?search= sigue funcionando');
 });
 
-test('Netlify: skip numérico como segmento (paginación de Stremio)', async () => {
-  const all = await viaNetlify(netlifyEvent({ path: '/catalog/movie/imdb-top.json' }));
-  const skipped = await viaNetlify(netlifyEvent({ path: '/catalog/movie/imdb-top/3.json' }));
+test('Netlify: skip numérico como segmento (paginación del catálogo envuelto)', async () => {
+  const all = await viaNetlify(netlifyEvent({ path: '/catalog/movie/top.json' }));
+  const skipped = await viaNetlify(netlifyEvent({ path: '/catalog/movie/top/3.json' }));
   assert.ok(all.parsed.metas.length > 3);
   assert.equal(skipped.parsed.metas.length, all.parsed.metas.length - 3);
   assert.deepEqual(skipped.parsed.metas[0], all.parsed.metas[3]);
@@ -178,19 +179,20 @@ test('Netlify: también se puede instalar con la URL cruda de la función', asyn
 test('prefijo de config en base64url (nuestro /configure.html) aplica a todo el path', async () => {
   const token = require('../src/util').base64UrlEncode({ sources: ['imdb'], badge: 'imdb', minScore: 8.5 });
   const manifest = await viaNetlify(netlifyEvent({ path: `/c/${token}/manifest.json` }));
-  assert.ok(manifest.parsed.catalogs.length > 0 && manifest.parsed.catalogs.every((c) => /imdb/.test(c.id)), `solo catálogos de IMDb: ${manifest.parsed.catalogs.map((c) => c.id).join(',')}`);
+  assert.deepEqual(manifest.parsed.catalogs.map((catalog) => `${catalog.type}/${catalog.id}`), ['movie/top', 'series/top'], 'las fuentes no sustituyen las filas upstream');
   assert.match(manifest.parsed.logo, new RegExp(`/c/${token}/logo\\.svg$`), 'basePath dentro del logo');
 
-  const catalog = await viaNetlify(netlifyEvent({ path: `/c/${token}/catalog/movie/imdb-top.json` }));
-  assert.ok(catalog.parsed.metas.every((item) => Number(item.imdbRating) >= 8.5), 'el filtro minScore se aplica');
+  const catalog = await viaNetlify(netlifyEvent({ path: `/c/${token}/catalog/movie/top.json` }));
+  assert.ok(catalog.parsed.metas.length > 0, 'no se eliminan películas del catálogo original');
+  assert.equal(catalog.parsed.metas[0].imdbRating, '8.8', 'badge IMDb en la tarjeta envuelta');
 });
 
 test('prefijo de config en JSON crudo (el que genera la UI nativa de Stremio)', async () => {
   const config = encodeURIComponent(JSON.stringify({ sources: 'imdb,filmaffinity', badge: 'imdb', panel: false }));
   const manifest = await viaNetlify(netlifyEvent({ path: `/${config}/manifest.json` }));
   assert.equal(manifest.statusCode, 200);
-  const ids = manifest.parsed.catalogs.map((catalog) => catalog.id);
-  assert.ok(ids.every((id) => /imdb|fa/.test(id)), `catálogos filtrados: ${ids.join(',')}`);
+  const ids = manifest.parsed.catalogs.map((catalog) => `${catalog.type}/${catalog.id}`);
+  assert.deepEqual(ids, ['movie/top', 'series/top'], 'los catálogos se conservan con la UI nativa de config');
 
   const meta = await viaNetlify(netlifyEvent({ path: `/${config}/meta/movie/tt1375606.json` }));
   assert.ok(meta.parsed.meta, 'la ficha sigue respondiendo');
