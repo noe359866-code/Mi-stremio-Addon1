@@ -147,12 +147,15 @@ caché, cobertura) y `LOG_VERBOSE=1` en el servidor para el detalle de cada fetc
 
 1. **Sites → Add new site → Import an existing project → GitHub** → elige
    `noe359866-code/Mi-stremio-Addon1`.
-2. En el asistente, **Advanced → Build settings → Base directory = `ratings-addon`**.
-   Con eso Netlify lee [`netlify.toml`](netlify.toml): crea la función `ratings`,
-   pone `publish` en una carpeta vacía (ningún fuente se sirve) y activa el proxy
+2. **Deja el Base directory vacío** (no escribas `ratings-addon`) y no pongas ningún
+   comando de build. El [`netlify.toml` de la raíz](../netlify.toml) ya localiza la
+   función, usa una carpeta pública vacía y activa el proxy
    `/* → /.netlify/functions/ratings`.
-   *Si prefieres no tocar el base directory*: en su lugar pon
-   **Configuration file = `ratings-addon/netlify.toml`** (y deja base en `.`).
+
+   Si el sitio ya existía con **Base directory = `ratings-addon`**, esa forma también
+   funciona: en ese caso Netlify usa [`ratings-addon/netlify.toml`](netlify.toml).
+   No combines esa base con **Configuration file = `ratings-addon/netlify.toml`**;
+   usa una de las dos formas, no las dos.
 3. **Environment variables** (Site settings → Environment variables → Add a variable):
 
    | Variable | Valor | Para qué |
@@ -168,9 +171,12 @@ caché, cobertura) y `LOG_VERBOSE=1` en el servidor para el detalle de cada fetc
    **solo si tú no las pones**, para que una fuente lenta no haga que Netlify mate la
    petición. Lo que falta se rellena en la siguiente visita (caché + `stale-if-error`).
 4. **Deploy site**. En los logs debe aparecer `Functions detected: 1 (ratings)` y
-   `node_bundler = esbuild` empaquetando `netlify/functions/ratings.js` con su `src/`.
+   `node_bundler = esbuild` empaquetando la función con su `src/`.
    Ese `node_bundler` **no es opcional**: sin él Netlify empaqueta solo la carpeta de
    funciones y `require('../../src/app')` reventaría en runtime con `MODULE_NOT_FOUND`.
+   La versión de Node se define como `NODE_VERSION = "22"` en `[build.environment]`;
+   no debe añadirse `node_version` dentro de `[functions]` porque Netlify rechaza esa
+   configuración antes de desplegar.
 5. URL que instalas en Stremio:
 
    ```
@@ -191,15 +197,16 @@ caché, cobertura) y `LOG_VERBOSE=1` en el servidor para el detalle de cada fetc
    Salida esperada (en local, con `npm run demo`, es idéntica menos en `mock=sí`):
 
    ```
-     ✔ manifiesto               18 catálogos · Puntuaciones · IMDb / RT / …
+     ✔ manifiesto               24 catálogos · Puntuaciones · IMDb / RT / …
      ✔ catálogo con extras       Inception (2010)
      ✔ ficha de película         Inception (2010) · 5 enlaces
      ✔ API de puntuaciones       7 métricas · combinada 8.4
    ```
 
-**Si solo tienes el repo conectado a otro sitio** (el de `Mi Projecto`): crea un
-**sitio nuevo** para el addon de puntuaciones en vez de reutilizarlo, y no añadas un
-`netlify.toml` en la raíz del repo — podría cambiarle el base directory al sitio actual.
+**Si el repo ya está conectado al sitio del addon de streams de `Mi Projecto`**: crea un
+**sitio nuevo** para el addon de puntuaciones en vez de reutilizarlo. El `netlify.toml`
+de la raíz despliega específicamente el addon de puntuaciones; cada addon debe tener su
+propio sitio y su propia URL de manifiesto.
 
 ### 5.2 Vercel
 
@@ -225,7 +232,7 @@ verdad (en Netlify/Vercel solo vive mientras el contenedor no se congele).
 | Síntoma | Causa y arreglo |
 | --- | --- |
 | `MODULE_NOT_FOUND: ../../src/app` en los logs de la función | falta `node_bundler = "esbuild"` en `[functions]` del `netlify.toml` |
-| Todas las rutas devuelven HTML del índice | el proxy no está: revisa que Netlify leyó `ratings-addon/netlify.toml` (los `[[redirects]]`) |
+| Todas las rutas devuelven HTML del índice | el proxy no está: revisa que Netlify leyó el `netlify.toml` de la raíz (o el de `ratings-addon` si configuraste esa base) y sus `[[redirects]]` |
 | `HTTP 404` en `/manifest.json` pero `/​.netlify/functions/ratings` responde | el `/*` no está aplicado (caché de Netlify): *Deploys → Trigger deploy → Clear cache and retry* |
 | `Task timed out after 10 seconds` | baja `FETCH_TIMEOUT_MS`/`FETCH_RETRIES` o quita fuentes con `RATINGS_SOURCES` |
 | `sources[].ok:false` con `code:"blocked"` | muro anti-bot del datacenter → ver 5.5 |

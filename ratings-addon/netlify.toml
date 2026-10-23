@@ -1,12 +1,9 @@
-# Config de despliegue en Netlify.
+# Config alternativa para un sitio con Base directory = `ratings-addon`.
+# Netlify lee este archivo desde esa base, crea la función `ratings` y activa
+# el proxy de todas las rutas.
 #
-# En tu proyecto de Netlify pon **Base directory = `ratings-addon`**
-# (Site configuration → Build & deployment → Base directory). Con eso Netlify
-# lee este archivo, crea la función `ratings` y el proxy de todas las rutas.
-#
-# Si prefieres no tocar el base directory: usa la config de la raíz o apunta
-# "Configuration file" a `ratings-addon/netlify.toml` (y entonces base = "." y
-# functions = "ratings-addon/netlify/functions").
+# Para una importación normal desde la raíz no hace falta configurar la base:
+# se usa automáticamente el netlify.toml de la raíz del repositorio.
 
 [build]
   base = "ratings-addon"
@@ -15,7 +12,6 @@
   publish = "netlify/pub" # carpeta vacía a propósito: así ninguna fuente es pública
 
 [functions]
-  node_version = "22"
   # OBLIGATORIO aquí: la función hace require('../../src/app') — archivos fuera de
   # netlify/functions/. Sin esbuild, Netlify empaqueta solo la carpeta de funciones
   # y en runtime petaría con MODULE_NOT_FOUND.

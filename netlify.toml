@@ -1,0 +1,25 @@
+# Despliegue directo del addon de puntuaciones al importar este repositorio.
+# No hace falta configurar Base directory: Netlify lee este archivo desde la raíz.
+# Para publicar el addon de streams de "Mi Projecto", usa otro sitio de Netlify.
+
+[build]
+  command = ""
+  functions = "ratings-addon/netlify/functions"
+  publish = "ratings-addon/netlify/pub"
+
+[functions]
+  # La función importa ratings-addon/src/*, fuera de su propia carpeta.
+  # esbuild debe incluir esos módulos en el paquete de la función.
+  node_bundler = "esbuild"
+
+[build.environment]
+  NODE_VERSION = "22"
+  NODE_ENV = "production"
+
+# Stremio necesita rutas públicas como /manifest.json, /catalog/... y /meta/....
+# Este proxy las envía todas a la misma función serverless.
+[[redirects]]
+  from = "/*"
+  to = "/.netlify/functions/ratings"
+  status = 200
+  force = true
