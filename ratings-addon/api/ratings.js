@@ -22,5 +22,6 @@ module.exports = async (req, res) => {
   const status = result.statusCode || result.status || 200;
   for (const [key, value] of Object.entries(result.headers || {})) res.setHeader(key, value);
   res.status(status);
-  res.send(typeof result.body === 'string' ? result.body : JSON.stringify(result.body === undefined ? '' : result.body));
+  if (Buffer.isBuffer(result.body) || result.body instanceof Uint8Array) res.send(Buffer.from(result.body));
+  else res.send(typeof result.body === 'string' ? result.body : JSON.stringify(result.body === undefined ? '' : result.body));
 };

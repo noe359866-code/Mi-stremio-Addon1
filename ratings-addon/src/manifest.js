@@ -12,7 +12,7 @@
 const { CATALOGS, catalogsFor } = require('./catalog');
 const { SOURCES } = require('./defs');
 
-const VERSION = '1.0.0';
+const VERSION = '2.0.0';
 const TYPES = ['movie', 'series', 'anime'];
 const ID_PREFIXES = ['tt', 'tmdb:', 'imdb:', 'rt:', 'mc:', 'fa:', 'anilist:', 'mal:'];
 

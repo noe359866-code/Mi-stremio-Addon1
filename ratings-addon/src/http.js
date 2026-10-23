@@ -104,6 +104,9 @@ async function request(url, options = {}, ctx = {}) {
 
       if (options.raw) {
         const buffer = Buffer.from(await response.arrayBuffer());
+        if (buffer.length > maxBytes) {
+          return { ok: false, status: response.status, error: 'response_too_large', ms: Date.now() - started, url };
+        }
         return { ok: true, status: response.status, body: buffer, contentType, ms: Date.now() - started, url };
       }
 

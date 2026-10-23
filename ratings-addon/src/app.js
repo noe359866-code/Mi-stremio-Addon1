@@ -16,12 +16,14 @@ const realHttp = require('./http');
 const { createMockHttp } = require('./mock');
 const { resolveWork } = require('./resolve');
 const { collectRatings } = require('./providers');
-const { getCatalog, CATALOGS, findCatalog } = require('./catalog');
-const { manifestFor, logoSvg, backgroundSvg, VERSION } = require('./manifest');
+const { getCatalog, findCatalog } = require('./catalog');
+const { logoSvg, backgroundSvg, VERSION } = require('./manifest');
 const { configureHtml, indexHtml } = require('./configure');
 const { buildMeta } = require('./format');
 const { SOURCES } = require('./defs');
 const { base64UrlDecode, safeJson, round1, mergeGaps, splitPath, parseQuery } = require('./util');
+const { wrappedManifest, handleCatalog: wrappedCatalog, handleMeta: wrappedMeta, handleAddonCatalog, posterItemFromPath } = require('./wrapper');
+const { generatePoster, posterCacheKey } = require('./poster');
 
 const JSON_HEADERS = {
   'Content-Type': 'application/json; charset=utf-8',
@@ -39,6 +41,8 @@ class Runtime {
       ratings: new TTLCache({ name: 'ratings', max: 3000, ttlMs: this.baseCfg.ttlRatingsMs }),
       charts: new TTLCache({ name: 'charts', max: 600, ttlMs: this.baseCfg.ttlChartsMs }),
       tmdb: new TTLCache({ name: 'tmdb', max: 3000, ttlMs: this.baseCfg.ttlTmdbMs }),
+      upstream: new TTLCache({ name: 'upstream', max: 600, ttlMs: 30 * 60 * 1000 }),
+      images: new TTLCache({ name: 'images', max: 250, ttlMs: this.baseCfg.ttlRatingsMs }),
     };
     this.throttle = this.mock ? null : new realHttp.DomainThrottle({ perHostMs: this.baseCfg.perHostMs });
     this.startedAt = Date.now();
@@ -119,11 +123,37 @@ class Runtime {
 
   async route({ path, query, cfg, ctx, origin, basePath }) {
     if (path === '/' || path === '/index.html') return html(200, indexHtml({ cfg, origin, basePath }));
-    if (path === '/configure' || path === '/configure.html') return html(200, configureHtml({ cfg, origin, basePath }));
+    if (path === '/configure' || path === '/configure.html') {
+      let catalogs = [];
+      try {
+        catalogs = (await wrappedManifest({ cfg, ctx, origin, basePath })).catalogs;
+      } catch (error) {
+        this.log(`config sin upstream: ${error.message}`);
+      }
+      return html(200, configureHtml({ cfg, origin, basePath, catalogs }));
+    }
     if (path === '/logo.svg') return respond(200, logoSvg(), { 'Content-Type': 'image/svg+xml; charset=utf-8', 'Cache-Control': 'public, max-age=86400' });
     if (path === '/bg.svg') return respond(200, backgroundSvg(), { 'Content-Type': 'image/svg+xml; charset=utf-8', 'Cache-Control': 'public, max-age=86400' });
     if (path === '/favicon.ico') return respond(200, logoSvg(), { 'Content-Type': 'image/svg+xml; charset=utf-8' });
-    if (path === '/manifest.json') return json(200, manifestFor({ cfg, origin, basePath }));
+    if (path === '/manifest.json') return json(200, await wrappedManifest({ cfg, ctx, origin, basePath }));
+
+    const posterItem = posterItemFromPath(path);
+    if (posterItem) {
+      try {
+        const entry = await this.caches.images.wrap(posterCacheKey(posterItem, cfg), () => generatePoster(posterItem, { cfg, ctx }));
+        const image = entry.value;
+        return respond(200, image.body, {
+          'Content-Type': image.contentType,
+          'Content-Length': String(image.body.length),
+          'Access-Control-Allow-Origin': '*',
+          'Cache-Control': 'public, max-age=86400, stale-while-revalidate=604800, stale-if-error=2592000',
+          'X-Rating-Poster': image.generated ? 'generated' : 'original',
+        });
+      } catch (error) {
+        // La imagen original es mejor que un póster roto si una fuente o sharp falla.
+        return respond(302, '', { Location: posterItem.src, 'Cache-Control': 'no-cache' });
+      }
+    }
 
     if (path === '/api/health') {
       return json(200, {
@@ -133,6 +163,7 @@ class Runtime {
         uptimeSeconds: Math.round((Date.now() - this.startedAt) / 1000),
         requests: this.requests,
         sources: cfg.sources,
+        wrapper: { upstreams: cfg.upstreams, nativeBadge: cfg.nativeBadge, posterOverlay: cfg.posterOverlay, ownCatalogs: false },
         keys: { tmdb: Boolean(cfg.tmdbApiKey || cfg.tmdbToken), omdb: Boolean(cfg.omdbApiKey), metacritic: Boolean(cfg.metacriticApiKey) },
         caches: Object.fromEntries(Object.entries(this.caches).map(([key, cache]) => [key, cache.stats()])),
       });
@@ -145,11 +176,19 @@ class Runtime {
         badge: cfg.badgeMetric,
       });
     }
-    if (path === '/api/catalogs') return json(200, { catalogs: CATALOGS });
+    if (path === '/api/catalogs') {
+      const manifest = await wrappedManifest({ cfg, ctx, origin, basePath });
+      return json(200, { catalogs: manifest.catalogs, ownCatalogs: false });
+    }
 
     let match = path.match(/^\/catalog\/([^/]+)\/([^/]+?)(?:\.json)?(?:$|\/)/);
     if (match) {
       const [, type, id] = match;
+      const wrapped = await wrappedCatalog({ path, type, id, query, cfg, ctx, origin, basePath });
+      if (wrapped) return json(200, wrapped);
+
+      // Rutas legacy de las primeras versiones: siguen respondiendo si alguien las
+      // tenía guardadas, pero YA NO se anuncian en manifest.json.
       const extras = parseExtras(path.slice(match[0].length));
       const result = await getCatalog({
         type,
@@ -170,11 +209,24 @@ class Runtime {
     if (match) {
       const [, type, rawId] = match;
       if (rawId === 'search' || rawId.startsWith('search/')) return json(200, { metas: [] });
+      const wrapped = await wrappedMeta({ path, type, id: rawId, query, cfg, ctx, origin, basePath });
+      if (wrapped) {
+        if (query.debug === '1' || cfg.verbose) wrapped.diagnostics = { wrapped: true, upstream: true };
+        return jsonCached(200, wrapped, cfg.cacheTtlHours);
+      }
       const { metas, diagnostics } = await this.resolveMeta({ type, id: rawId, cfg, ctx, origin, basePath });
       const payload = { meta: metas[0] || null };
       if (diagnostics && (query.debug === '1' || cfg.verbose)) payload.diagnostics = diagnostics;
       if (!payload.meta) payload.meta = null;
       return jsonCached(200, payload, cfg.cacheTtlHours);
+    }
+
+    match = path.match(/^\/addon_catalog\/([^/]+)\/(.+?)(?:\.json)?$/);
+    if (match) {
+      const [, type, rawId] = match;
+      const wrapped = await handleAddonCatalog({ path, type, id: rawId, query, ctx });
+      if (wrapped) return json(200, wrapped);
+      return json(200, { addons: [] });
     }
 
     if (path === '/api/ratings' || path.startsWith('/api/ratings/')) {
@@ -255,8 +307,10 @@ class Runtime {
 
     if (path === '/api/chart') {
       const type = query.type || 'movie';
-      const id = query.id || CATALOGS.find((catalog) => catalog.type === type)?.id;
+      const id = query.id;
       if (!id) return json(400, { error: 'falta ?id= de catálogo' });
+      const wrapped = await wrappedCatalog({ path: `/catalog/${type}/${id}.json`, type, id, query, cfg, ctx, origin, basePath });
+      if (wrapped) return json(200, { type, id, metas: wrapped.metas || [], errors: wrapped.errors, diagnostics: { wrapped: true } });
       const result = await getCatalog({ type, id, cfg, ctx, search: query.search, limit: Number(query.limit || 30) });
       return json(200, { type, id, ...result });
     }
@@ -264,7 +318,7 @@ class Runtime {
     const error = new Error(`ruta no encontrada: ${path}`);
     error.code = 'not_found';
     error.routes = ['/manifest.json', '/configure.html', '/catalog/{type}/{id}.json', '/meta/{type}/{id}.json', '/api/ratings', '/api/health'];
-    return json(404, { error: error.message, routes: error.routes, catalogs: CATALOGS.map(({ type, id, name }) => `/${type}/${id}.json → ${name}`) });
+    return json(404, { error: error.message, routes: error.routes, wrapper: { ownCatalogs: false, upstreams: cfg.upstreams } });
   }
 
   /** Ficha completa: resolver + scrapear (con caché) + dar forma a meta de Stremio. */

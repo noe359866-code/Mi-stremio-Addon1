@@ -37,9 +37,10 @@ test('todos los selectores que usa el cliente existen en el HTML', async () => {
   for (const attr of ['data-src', 'data-title']) assert.match(html, new RegExp(attr), `el cliente espera [${attr}]`);
 });
 
-test('la página respeta la configuración (fuentes marcadas, catálogo filtrado, aviso de demo)', async () => {
+test('la página respeta la configuración y muestra los catálogos envueltos', async () => {
   const cfg = { ...load({ RATINGS_MOCK: '1' }), sources: ['imdb', 'tmdb'] };
-  const html = configureHtml({ cfg, origin: 'http://x:7000', basePath: '/c/abc' });
+  const wrappedCatalogs = [{ type: 'movie', id: 'top', name: 'Popular' }, { type: 'series', id: 'top', name: 'Popular' }];
+  const html = configureHtml({ cfg, origin: 'http://x:7000', basePath: '/c/abc', catalogs: wrappedCatalogs });
   assert.match(html, /modo demo/);
   assert.match(html, /id="badge"/);
   const checked = [...html.matchAll(/data-src="([a-z]+)" (checked)?/g)].filter((match) => match[2]);
@@ -47,8 +48,10 @@ test('la página respeta la configuración (fuentes marcadas, catálogo filtrado
   assert.ok(!/"tmdb" checked[\s\S]*"filmaffinity" checked/.test(html), 'las fuentes apagadas no salen marcadas');
   const [, catalogsJson] = html.match(/window\.__CATALOGS__ = (\[.*?\]);/s);
   const catalogs = JSON.parse(catalogsJson);
-  assert.ok(Array.isArray(catalogs) && catalogs.length > 0 && catalogs.length < 18, 'menos fuentes => menos catálogos listados');
-  assert.ok(catalogs.every((entry) => entry.type && entry.id && entry.name));
+  assert.deepEqual(catalogs, wrappedCatalogs, 'las fuentes no añaden ni quitan filas upstream');
+  assert.match(html, /id="upstreams"/);
+  assert.match(html, /id="nativeBadge"/);
+  assert.match(html, /id="posterOverlay"/);
 });
 
 test('el logo y el fondo son SVG servibles y el favicon también', async () => {

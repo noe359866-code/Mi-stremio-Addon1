@@ -3,14 +3,17 @@
 # Para publicar el addon de streams de "Mi Projecto", usa otro sitio de Netlify.
 
 [build]
-  command = ""
-  functions = "ratings-addon/netlify/functions"
-  publish = "ratings-addon/netlify/pub"
+  base = "ratings-addon"
+  command = "npm ci --no-audit --no-fund"
+  functions = "netlify/functions"
+  publish = "netlify/pub"
 
 [functions]
-  # La función importa ratings-addon/src/*, fuera de su propia carpeta.
+  # La función importa src/*, fuera de su propia carpeta.
   # esbuild debe incluir esos módulos en el paquete de la función.
   node_bundler = "esbuild"
+  # sharp es nativo: sus binarios se copian, no se compilan dentro del bundle JS.
+  external_node_modules = ["sharp"]
 
 [build.environment]
   NODE_VERSION = "22"

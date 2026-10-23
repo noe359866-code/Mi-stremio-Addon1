@@ -134,11 +134,16 @@ function vercelRequest(req, options = {}) {
 function toLambdaResponse(result) {
   const status = result.statusCode || result.status || 200;
   const headers = { ...(result.headers || {}) };
-  const body = typeof result.body === 'string' ? result.body : JSON.stringify(result.body === undefined ? '' : result.body);
+  const binary = Buffer.isBuffer(result.body) || result.body instanceof Uint8Array;
+  const body = binary
+    ? Buffer.from(result.body).toString('base64')
+    : typeof result.body === 'string'
+      ? result.body
+      : JSON.stringify(result.body === undefined ? '' : result.body);
   // Las respuestas sin cuerpo (204 de preflight, 304) no llevan Content-Type: si no,
   // el cliente intenta parsear una respuesta vacía.
   if (!headers['Content-Type'] && body) headers['Content-Type'] = 'application/json; charset=utf-8';
-  return { statusCode: status, headers, body, isBase64Encoded: false };
+  return { statusCode: status, headers, body, isBase64Encoded: binary };
 }
 
 /**

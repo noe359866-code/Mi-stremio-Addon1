@@ -203,12 +203,11 @@ test('los catálogos nuevos de anime traen nota en 0-10, póster y enlace a la f
   assert.equal(search.data.metas.length, 1, 'la búsqueda de Discover filtra en AniList');
 });
 
-test('el manifiesto y la página de config incluyen las dos fuentes', async () => {
+test('la configuración incluye fuentes anime sin publicar catálogos propios', async () => {
   const { data: manifest } = await jsonOf('/manifest.json');
-  assert.equal(manifest.catalogs.length, 24, '18 de siempre + 6 de anime');
-  assert.ok(manifest.catalogs.some((catalog) => catalog.id === 'mal-top' && catalog.type === 'anime'));
-  assert.ok(manifest.catalogs.some((catalog) => catalog.id === 'anilist-trending'));
-  assert.ok(manifest.resources.some((resource) => resource.name === 'meta' && resource.idPrefixes.includes('anilist:')));
+  assert.deepEqual(manifest.catalogs.map((catalog) => `${catalog.type}/${catalog.id}`), ['movie/top', 'series/top']);
+  assert.ok(!manifest.catalogs.some((catalog) => /mal-top|anilist/.test(catalog.id)), 'no hay filas anime propias');
+  assert.ok(manifest.resources.some((resource) => resource.name === 'meta' && resource.idPrefixes.includes('tt')));
 
   const res = await runtime.handle({ method: 'GET', path: '/configure.html', url: '/configure.html', query: {}, headers: {} });
   assert.match(res.body, /data-src="anilist"/);
