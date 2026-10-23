@@ -37,6 +37,22 @@ const SOURCES = {
     homepage: 'https://www.filmaffinity.com/es/main.html',
     docs: 'Búsqueda propia + nota y votos de la ficha (es la fuente en español).',
   },
+  anilist: {
+    id: 'anilist',
+    label: 'AniList',
+    emoji: '🌸',
+    homepage: 'https://anilist.co/',
+    docs: 'API GraphQL pública y gratuita (sin key). Solo anime; nota 0-100 y enlaza el id de MAL.',
+    animeOnly: true,
+  },
+  mal: {
+    id: 'mal',
+    label: 'MyAnimeList',
+    emoji: '🎌',
+    homepage: 'https://myanimelist.net/',
+    docs: 'API oficial v2 si pones MAL_CLIENT_ID, si no Jikan (api.jikan.moe, sin key) y, en último caso, la ficha HTML. Solo anime.',
+    animeOnly: true,
+  },
   tmdb: {
     id: 'tmdb',
     label: 'TMDB',
@@ -54,9 +70,14 @@ const METRICS = {
   mc_metascore: { source: 'metacritic', label: 'Metascore', emoji: '🎯', scale: 100, weight: 0.9, minVotes: 0, unit: 'críticas' },
   mc_user: { source: 'metacritic', label: 'Usuarios Metacritic', emoji: '💻', scale: 10, weight: 0.45, minVotes: 0, unit: 'votos' },
   tmdb: { source: 'tmdb', label: 'TMDB', emoji: '🎬', scale: 10, weight: 0.55, minVotes: 250, unit: 'votos' },
+  mal: { source: 'mal', label: 'MyAnimeList', emoji: '🎌', scale: 10, weight: 0.85, minVotes: 250, unit: 'votos', animeOnly: true },
+  // AniList publica "Average Score: 84" sobre 100: no es un porcentaje, así que
+  // `percent: false` para que se muestre 84/100 en vez de 84%.
+  anilist: { source: 'anilist', label: 'AniList', emoji: '🌸', scale: 100, percent: false, weight: 0.85, minVotes: 150, unit: 'puntuaciones', animeOnly: true },
 };
 
-const METRIC_ORDER = ['imdb', 'rt_tomatometer', 'mc_metascore', 'filmaffinity', 'tmdb', 'rt_audience', 'mc_user'];
+// Orden del panel en la ficha: general primero y el bloque de anime después.
+const METRIC_ORDER = ['imdb', 'rt_tomatometer', 'mc_metascore', 'filmaffinity', 'mal', 'anilist', 'tmdb', 'rt_audience', 'mc_user'];
 
 /** Convierte {key: {value, votes}} a métricas normalizadas a 0-10. */
 function normalizeMetrics(rawMetrics) {
@@ -73,10 +94,14 @@ function normalizeMetrics(rawMetrics) {
       source: def.source,
       label: def.label,
       emoji: def.emoji,
+      animeOnly: Boolean(def.animeOnly),
       raw,
       scale: def.scale,
       value,
-      display: `${def.scale === 100 ? Math.round(raw) : (Math.round(raw * 10) / 10).toFixed(1)}${def.scale === 100 ? '%' : `/${def.scale}`}`,
+      display:
+        def.scale === 100
+          ? `${Math.round(raw)}${def.percent === false ? `/${def.scale}` : '%'}`
+          : `${(Math.round(raw * 10) / 10).toFixed(1)}/${def.scale}`,
       votes: Number.isFinite(Number(input && input.votes)) && input ? Number(input.votes) : null,
       text: (input && input.text) || null,
       derived: (input && input.derived) || null,

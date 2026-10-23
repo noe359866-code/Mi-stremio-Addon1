@@ -42,6 +42,10 @@ function parseId(rawId) {
   if (match) return { mcSlug: match[1] };
   match = id.match(/^fa:(\d+)$/i);
   if (match) return { faId: match[1] };
+  match = id.match(/^anilist:(\d+)$/i);
+  if (match) return { anilist: match[1], __anime: true };
+  match = id.match(/^mal:(\d+)$/i);
+  if (match) return { mal: match[1], __anime: true };
   match = id.match(/^https?:\/\/(?:www\.)?(?:imdb\.com\/(?:[a-z]{2}\/)?title|rottentomatoes\.com|metacritic\.com|filmaffinity\.com)\/.*$/i);
   if (match) return { url: id };
   return {};
@@ -63,6 +67,16 @@ function idsFromUrl(url) {
   }
   const fa = String(url).match(/filmaffinity\.com\/[a-z]{2}\/((?:film|tv|tvseries)\d+)\.html/i);
   if (fa) ids.faUrl = `https://www.filmaffinity.com/es/${fa[1]}.html`;
+  const anilist = String(url).match(/anilist\.co\/anime\/(\d+)/i);
+  if (anilist) {
+    ids.anilist = anilist[1];
+    ids.__type = 'anime';
+  }
+  const mal = String(url).match(/myanimelist\.net\/anime\/(\d+)/i);
+  if (mal) {
+    ids.mal = mal[1];
+    ids.__type = 'anime';
+  }
   return ids;
 }
 
@@ -84,16 +98,19 @@ async function resolveWork(input, ctx) {
   const fromUrl = input.url ? idsFromUrl(input.url) : {};
   const textHint = input.title ? splitTitleYear(input.title) : { title: null, year: null };
 
+  // un id de AniList/MAL fija el tipo: son catálogos exclusivos de anime
+  const isAnimeId = Boolean(fromId.__anime || fromUrl.__type === 'anime');
   const work = {
-    type: normalizeType(input.type, { mediaType: fromUrl.__type ? 'tv' : undefined }),
+    type: isAnimeId && !input.type ? 'anime' : normalizeType(input.type, { mediaType: fromUrl.__type ? 'tv' : undefined }),
     title: textHint.title || null,
     originalTitle: null,
     year: input.year ? Number(input.year) || null : textHint.year,
     poster: null,
-    ids: { imdb: fromId.imdb || fromUrl.imdb || null, tmdb: fromId.tmdb || null, rtSlug: fromId.rtSlug || fromUrl.rtSlug || null, mcSlug: fromId.mcSlug || fromUrl.mcSlug || null, faId: fromId.faId || null, faUrl: fromUrl.faUrl || null },
+    ids: { imdb: fromId.imdb || fromUrl.imdb || null, tmdb: fromId.tmdb || null, rtSlug: fromId.rtSlug || fromUrl.rtSlug || null, mcSlug: fromId.mcSlug || fromUrl.mcSlug || null, faId: fromId.faId || null, faUrl: fromUrl.faUrl || null, anilist: fromId.anilist || fromUrl.anilist || null, mal: fromId.mal || fromUrl.mal || null },
     resolvedVia: [],
   };
-  if (fromUrl.__type && work.type === 'movie') work.type = 'series';
+  if (fromUrl.__type === 'anime') work.type = 'anime';
+  else if (fromUrl.__type && work.type === 'movie') work.type = 'series';
   if (!work.title && work.ids.rtSlug) work.title = work.ids.rtSlug.replace(/[_-]+/g, ' ');
   if (!work.title && work.ids.mcSlug) work.title = work.ids.mcSlug.replace(/[-]+/g, ' ');
 
@@ -155,8 +172,31 @@ async function resolveWork(input, ctx) {
     }
   }
 
+  // --- anime: con sólo el id de AniList (o de MAL) su API ya nos da título/año/póster
+  if (!work.title && (work.ids.anilist || work.ids.mal)) {
+    try {
+      const anilistProvider = require('./providers/anilist');
+      const found = await anilistProvider.lookup({ type: 'anime', ids: { anilist: work.ids.anilist, mal: work.ids.mal } }, ctx);
+      const resolved = (found && found.resolved) || {};
+      work.type = 'anime';
+      work.title = resolved.title || work.title;
+      work.originalTitle = resolved.originalTitle || work.originalTitle;
+      work.year = work.year || resolved.year || null;
+      work.poster = work.poster || resolved.poster || null;
+      work.background = work.background || resolved.background || null;
+      work.overview = work.overview || resolved.overview || null;
+      if (!work.genres && resolved.genres) work.genres = resolved.genres;
+      if (!work.ids.anilist && resolved.anilistId) work.ids.anilist = resolved.anilistId;
+      if (!work.ids.mal && resolved.malId) work.ids.mal = resolved.malId;
+      work.anilistPreview = found && found.metrics ? found.metrics.anilist || null : null;
+      work.resolvedVia.push('anilist');
+    } catch (error) {
+      if (ctx.cfg.verbose) ctx.log(`resolve anilist: ${error.message}`);
+    }
+  }
+
   // --- última red: si sólo tenemos título, los scrapers pueden funcionar igual
-  if (!work.title && !work.ids.imdb && !work.ids.tmdb && !work.ids.rtSlug && !work.ids.mcSlug && !work.ids.faUrl) {
+  if (!work.title && !work.ids.imdb && !work.ids.tmdb && !work.ids.rtSlug && !work.ids.mcSlug && !work.ids.faUrl && !work.ids.anilist && !work.ids.mal) {
     const error = new Error('no se puede resolver el contenido: manda id (tt…, tmdb:123) o ?title=…');
     error.code = 'bad_request';
     throw error;

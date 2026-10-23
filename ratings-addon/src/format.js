@@ -27,11 +27,25 @@ function metricLabel(key) {
   return def.label;
 }
 
+/** Cómo se escribe el valor de una métrica: `8.6/10`, `81%`, `84/100`. */
+function scaleParts(key) {
+  const def = METRICS[key] || {};
+  const isHundred = def.scale === 100;
+  return { isHundred, isPercent: isHundred && def.percent !== false };
+}
+
+function metricValueText(key, raw) {
+  const def = METRICS[key] || {};
+  const { isHundred, isPercent } = scaleParts(key);
+  const number = isHundred ? String(Math.round(Number(raw))) : (Math.round(Number(raw) * 10) / 10).toFixed(1);
+  return `${number}${isPercent ? '%' : `/${def.scale || 10}`}`;
+}
+
 function metricLine(key, metric, { emoji = true } = {}) {
   const def = METRICS[key] || {};
   const icon = emoji && def.emoji ? `${def.emoji} ` : '';
-  const isPercent = def.scale === 100;
-  const raw = isPercent ? String(Math.round(Number(metric.raw))) : (Math.round(Number(metric.raw) * 10) / 10).toFixed(1);
+  const { isHundred, isPercent } = scaleParts(key);
+  const raw = isHundred ? String(Math.round(Number(metric.raw))) : (Math.round(Number(metric.raw) * 10) / 10).toFixed(1);
   const scaleText = isPercent ? '%' : `/${def.scale || 10}`;
   const votes = metric.votes ? ` · ${formatVotes(metric.votes)} ${metric.unit || (def.scale === 100 ? 'críticas' : 'votos')}` : '';
   const rank = metric.rank ? ` · #${metric.rank}` : '';
@@ -45,7 +59,9 @@ function metricLine(key, metric, { emoji = true } = {}) {
  */
 function buildPanel(metrics, options = {}) {
   const cfg = options.cfg || {};
-  const order = cfg.metricOrder && cfg.metricOrder.length ? cfg.metricOrder : Object.keys(METRICS);
+  const all = cfg.metricOrder && cfg.metricOrder.length ? cfg.metricOrder : Object.keys(METRICS);
+  // las métricas exclusivas de anime (AniList, MAL) no se piden en pelis/series
+  const order = options.type && options.type !== 'anime' ? all.filter((key) => !(METRICS[key] && METRICS[key].animeOnly)) : all;
   const emoji = cfg.includePanelEmoji !== false;
   const lines = [];
   for (const key of order) {
@@ -91,7 +107,7 @@ function buildMeta({ work, rawMetrics, cfg, catalogId, note }) {
   if (cfg.descriptionPrefix) lines.push(cfg.descriptionPrefix);
   if (cfg.showPanel) {
     lines.push('— PUNTUACIONES —');
-    lines.push(...buildPanel(metrics, { cfg }));
+    lines.push(...buildPanel(metrics, { cfg, type: work.type }));
     if (combined) {
       lines.push(`————— ${starsText(combined.value)} ${round1(combined.value)}/10 · ${verdictFor(combined.value)}`);
     }
@@ -125,7 +141,7 @@ function buildMeta({ work, rawMetrics, cfg, catalogId, note }) {
       if (!metric.url || seen.has(metric.url)) continue;
       seen.add(metric.url);
       meta.links.push({
-        name: `${METRICS[key] ? METRICS[key].emoji : ''} ${metricLabel(key)} ${round1(metric.raw)}${METRICS[key] && METRICS[key].scale === 100 ? '%' : '/10'}`,
+        name: `${METRICS[key] ? METRICS[key].emoji : ''} ${metricLabel(key)} ${metricValueText(key, metric.raw)}`,
         category: 'Puntuaciones',
         url: metric.url,
       });
@@ -212,4 +228,4 @@ function panelHtml(metrics, combined) {
   return `${total}<table class="scores">${rows || '<tr><td>Sin datos</td></tr>'}</table>`;
 }
 
-module.exports = { buildMeta, buildCatalogItem, buildPanel, metricLine, formatVotes, scoreSummary, panelHtml, verdictFor, normalizeMetrics, combine };
+module.exports = { buildMeta, buildCatalogItem, buildPanel, metricLine, metricValueText, formatVotes, scoreSummary, panelHtml, verdictFor, normalizeMetrics, combine };

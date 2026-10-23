@@ -30,6 +30,12 @@ const CATALOGS = [
   { type: 'anime', id: 'tmdb-all', name: '🌸 Anime · Top (sin idioma)', provider: 'tmdb', list: 'anime-all', icon: '🌸' },
   { type: 'anime', id: 'imdb-top', name: '🌸 Anime · Top IMDb', provider: 'imdb', list: 'anime', icon: '⭐' },
   { type: 'anime', id: 'fa-top', name: '🌸 Anime · Top FilmAffinity', provider: 'filmaffinity', list: 'anime', icon: '🎞️' },
+  { type: 'anime', id: 'mal-top', name: '🎌 Anime · Top MyAnimeList', provider: 'mal', list: 'top', icon: '🎌' },
+  { type: 'anime', id: 'mal-popular', name: '🎌 Anime · Populares en MAL', provider: 'mal', list: 'popular', icon: '🎌' },
+  { type: 'anime', id: 'mal-airing', name: '📺 Anime · En emisión (MAL)', provider: 'mal', list: 'airing', icon: '📺' },
+  { type: 'anime', id: 'anilist-top', name: '🌸 Anime · Top AniList', provider: 'anilist', list: 'top', icon: '🌸' },
+  { type: 'anime', id: 'anilist-trending', name: '🔥 Anime · Tendencia AniList', provider: 'anilist', list: 'trending', icon: '🔥' },
+  { type: 'anime', id: 'anilist-season', name: '🍂 Anime · Temporada actual (AniList)', provider: 'anilist', list: 'season', icon: '🗓️' },
 ];
 
 function findCatalog(type, id) {
@@ -46,7 +52,8 @@ function scoreToTen(item) {
   if (item.score === null || item.score === undefined) return null;
   const raw = Number(item.score);
   if (!Number.isFinite(raw)) return null;
-  if (item.source === 'rottentomatoes' || item.source === 'metacritic') return clamp(round1(raw / 10), 0, 10);
+  // RT y Metacritic publican sobre 100; AniList también (averageScore 0-100)
+  if (item.source === 'rottentomatoes' || item.source === 'metacritic' || item.source === 'anilist') return clamp(round1(raw / 10), 0, 10);
   return clamp(round1(raw), 0, 10);
 }
 

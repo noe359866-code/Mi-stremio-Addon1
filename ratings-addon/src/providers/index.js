@@ -16,13 +16,29 @@ const imdb = require('./imdb');
 const rottentomatoes = require('./rottentomatoes');
 const metacritic = require('./metacritic');
 const filmaffinity = require('./filmaffinity');
+const anilist = require('./anilist');
+const mal = require('./mal');
 
-const ALL = { tmdb, imdb, rottentomatoes, metacritic, filmaffinity };
-const SCRAPERS = ['imdb', 'rottentomatoes', 'metacritic', 'filmaffinity'];
+const ALL = { tmdb, imdb, rottentomatoes, metacritic, filmaffinity, anilist, mal };
+const SCRAPERS = ['imdb', 'rottentomatoes', 'metacritic', 'filmaffinity', 'anilist', 'mal'];
+/** AniList y MyAnimeList solo tienen datos de anime. */
+const ANIME_ONLY = ['anilist', 'mal'];
 
 function enabledProviders(cfg) {
   const wanted = cfg.sources && cfg.sources.length ? cfg.sources : Object.keys(ALL);
   return wanted.filter((id) => ALL[id]).map((id) => ALL[id]);
+}
+
+/**
+ * AniList/MAL se saltan para pelis y series de acción real: no indexan nada ahí.
+ * Se mantienen si el work ya trae su id (el usuario puso `anilist:…`/`mal:…`) o si
+ * el tipo es anime.
+ */
+function appliesTo(provider, work) {
+  if (!ANIME_ONLY.includes(provider.id)) return true;
+  if (work && work.type === 'anime') return true;
+  const ids = (work && work.ids) || {};
+  return Boolean(ids.anilist || ids.mal);
 }
 
 function isKeyMissing(error) {
@@ -54,6 +70,9 @@ async function collectRatings(work, ctx) {
       if (key === 'rtSlug' && !currentWork.ids.rtSlug) currentWork.ids.rtSlug = value;
       if (key === 'mcSlug' && !currentWork.ids.mcSlug) currentWork.ids.mcSlug = value;
       if (key === 'faUrl' && !currentWork.ids.faUrl) currentWork.ids.faUrl = value;
+      // AniList publica el id de MAL y al revés: cruzarlos evita búsquedas con ruido
+      if (key === 'anilistId' && !currentWork.ids.anilist) currentWork.ids.anilist = value;
+      if (key === 'malId' && !currentWork.ids.mal) currentWork.ids.mal = value;
       if ((key === 'title' || key === 'year' || key === 'poster') && !currentWork[key]) currentWork[key] = value;
     }
   };
@@ -102,27 +121,36 @@ async function collectRatings(work, ctx) {
   }
 
   // 2) el resto en paralelo
-  const parallel = enabled.filter((provider) => SCRAPERS.includes(provider.id));
+  const parallel = enabled.filter((provider) => SCRAPERS.includes(provider.id) && appliesTo(provider, currentWork));
+  for (const provider of enabled.filter((entry) => SCRAPERS.includes(entry.id) && !appliesTo(entry, currentWork))) {
+    setStatus({ source: provider.id, ok: false, skipped: true, code: 'not_anime', error: 'solo anime', ms: 0 });
+  }
   await Promise.all(parallel.map((provider) => runOne(provider)));
 
   // 3) reintenta las que fallaron si ahora tenemos ids nuevos
-  const failedIds = statuses.filter((status) => !status.ok).map((status) => status.source);
-  const gainedIds = Boolean(resolved.imdbId && !work.ids?.imdb) || Boolean(resolved.tmdbId && !work.ids?.tmdb);
+  // las fuentes saltadas (p. ej. AniList/MAL en una peli) no se reintentan
+  const failedIds = statuses.filter((status) => !status.ok && !status.skipped).map((status) => status.source);
+  const gainedIds =
+    Boolean(resolved.imdbId && !work.ids?.imdb) ||
+    Boolean(resolved.tmdbId && !work.ids?.tmdb) ||
+    Boolean(resolved.anilistId && !work.ids?.anilist) ||
+    Boolean(resolved.malId && !work.ids?.mal);
   if (failedIds.length && gainedIds && ctx.cfg.retryOnNewId !== false) {
     const retry = enabled.filter((provider) => failedIds.includes(provider.id));
     await Promise.all(retry.map((provider) => runOne(provider)));
   }
 
   const okCount = statuses.filter((status) => status.ok).length;
-  const failed = statuses.filter((status) => !status.ok);
+  const active = statuses.filter((status) => !status.skipped);
+  const failed = active.filter((status) => !status.ok);
   return {
     metrics,
     statuses: statuses.map((status) => ({ ...status, ok: Boolean(status.ok) })),
     resolved,
     notes,
     work: currentWork,
-    coverage: { ok: okCount, total: statuses.length || enabled.length, missing: failed.map((f) => f.source) },
-    allFailed: statuses.length > 0 && okCount === 0,
+    coverage: { ok: okCount, total: active.length || enabled.length, missing: failed.map((f) => f.source) },
+    allFailed: active.length > 0 && okCount === 0,
   };
 }
 
@@ -144,4 +172,4 @@ async function collectCatalog({ type, provider: providerId, list, limit, search,
   }
 }
 
-module.exports = { ALL, SCRAPERS, collectRatings, collectCatalog, enabledProviders };
+module.exports = { ALL, SCRAPERS, ANIME_ONLY, collectRatings, collectCatalog, enabledProviders, appliesTo };

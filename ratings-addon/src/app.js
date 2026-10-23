@@ -21,7 +21,7 @@ const { manifestFor, logoSvg, backgroundSvg, VERSION } = require('./manifest');
 const { configureHtml, indexHtml } = require('./configure');
 const { buildMeta } = require('./format');
 const { SOURCES } = require('./defs');
-const { base64UrlDecode, safeJson, round1, mergeGaps } = require('./util');
+const { base64UrlDecode, safeJson, round1, mergeGaps, splitPath, parseQuery } = require('./util');
 
 const JSON_HEADERS = {
   'Content-Type': 'application/json; charset=utf-8',
@@ -64,21 +64,44 @@ class Runtime {
     let path = request.path || splitPath(request.url) || '/';
     path = path.replace(/\/{2,}/g, '/'); // "//x" no es un path válido, pero puede llegar de un proxy
     let cfg = this.baseCfg;
+    let basePath = '';
 
-    // config por ruta: /c/<base64url(json)>/...
-    const configMatch = path.match(/^\/c\/([A-Za-z0-9_\-]+)(\/|$)/);
-    if (configMatch) {
-      const decoded = decodeUserConfig(configMatch[1]);
-      cfg = applyUserConfig(this.baseCfg, decoded);
-      path = path.slice(configMatch[0].length - 1);
-      if (!path.startsWith('/')) path = `/${path}`;
-    } else if (request.query && request.query.cfg) {
-      cfg = applyUserConfig(this.baseCfg, decodeUserConfig(String(request.query.cfg)));
+    // Formas de pasar la configuración (todas generadas por esta propia app o por
+    // el UI de configuración nativa de Stremio a partir de manifest.config):
+    //   /c/<base64url(json)>/manifest.json                       <- nuestro /configure.html
+    //   /<encodeURIComponent(json)>/manifest.json               <- formato del SDK oficial
+    //   <prefijo-funcion>/c/<token>/...                          <- si va tras /.netlify/functions/ratings
+    //   ?cfg=<token> | ?config=<json>                            <- prueba rápida
+    // El prefijo se conserva en basePath para que logo/enlaces del manifiesto resuelvan.
+    const segments = path.split('/').filter(Boolean);
+    let consumed = 0;
+    let token = null;
+    if (segments[0] === 'c' && segments.length > 1) {
+      token = segments[1];
+      consumed = 2;
+    } else if (segments.length > 1 && /^({|%7b)/i.test(segments[0])) {
+      token = segments[0];
+      consumed = 1;
+    }
+    if (token !== null) {
+      const decoded = decodeConfigToken(token);
+      if (decoded) {
+        cfg = applyUserConfig(this.baseCfg, decoded);
+        basePath = '/' + segments.slice(0, consumed).join('/');
+        path = (consumed < segments.length ? '/' + segments.slice(consumed).join('/') : '/');
+      } else {
+        consumed = 0;
+      }
+    }
+    if (!consumed && request.query) {
+      const fromQuery = request.query.cfg || request.query.config;
+      const decoded = fromQuery ? decodeConfigToken(String(fromQuery)) : null;
+      if (decoded) cfg = applyUserConfig(this.baseCfg, decoded);
     }
 
     const query = { ...parseQuery(request.url), ...(request.query || {}) };
-    const origin = request.origin || deriveOrigin(request, cfg);
-    const basePath = configMatch ? `/c/${configMatch[1]}` : '';
+    // PUBLIC_URL manda sobre lo que digan las headers (detrás de un proxy suelen mentir)
+    const origin = cfg.publicUrl ? deriveOrigin(request, cfg) : request.origin || deriveOrigin(request, cfg);
     const ctx = this.ctxFor(cfg);
 
     try {
@@ -127,18 +150,20 @@ class Runtime {
     let match = path.match(/^\/catalog\/([^/]+)\/([^/]+?)(?:\.json)?(?:$|\/)/);
     if (match) {
       const [, type, id] = match;
+      const extras = parseExtras(path.slice(match[0].length));
       const result = await getCatalog({
         type,
         id,
-        search: query.search || query.q || undefined,
-        skip: Number(query.skip || 0),
+        search: query.search || extras.search || query.q || undefined,
+        skip: Number(extras.skip !== undefined ? extras.skip : (query.skip || 0)),
         limit: Number(query.limit || cfg.catalogLimit),
+        genre: extras.genre && extras.genre !== 'none' ? extras.genre : undefined,
         cfg,
         ctx,
       });
       const payload = { metas: result.metas };
       if (query.debug === '1' || cfg.verbose) payload.diagnostics = result.diagnostics;
-      return json(200, payload);
+      return jsonCached(200, payload, cfg.cacheTtlHours);
     }
 
     match = path.match(/^\/meta\/([^/]+)\/(.+?)(?:\.json)?$/);
@@ -149,7 +174,7 @@ class Runtime {
       const payload = { meta: metas[0] || null };
       if (diagnostics && (query.debug === '1' || cfg.verbose)) payload.diagnostics = diagnostics;
       if (!payload.meta) payload.meta = null;
-      return json(200, payload);
+      return jsonCached(200, payload, cfg.cacheTtlHours);
     }
 
     if (path === '/api/ratings' || path.startsWith('/api/ratings/')) {
@@ -202,7 +227,8 @@ class Runtime {
           ])
         ),
         combined: combined ? { value: combined.value, verdict: combined.verdict, used: combined.used } : null,
-        sources: collected.statuses,
+        sources: collected.statuses.filter((status) => !status.skipped),
+        skipped: collected.statuses.filter((status) => status.skipped).map((status) => status.source),
         stremio: { id: meta.id, type: meta.type, name: meta.name, imdbRating: meta.imdbRating, description: meta.description },
         stremioId: meta.id,
         manifestPath: `${basePath || ''}/manifest.json`,
@@ -278,7 +304,8 @@ class Runtime {
     return {
       metas: [meta],
       diagnostics: {
-        sources: collected.statuses,
+        sources: collected.statuses.filter((status) => !status.skipped),
+        skipped: collected.statuses.filter((status) => status.skipped).map((status) => status.source),
         coverage: collected.coverage,
         combined: built.combined ? built.combined.value : null,
         cached: Boolean(payload.fromCache),
@@ -300,6 +327,8 @@ function applyResolved(work, resolved = {}) {
     mcSlug: resolved.mcSlug || null,
     faId: resolved.faId || null,
     faUrl: resolved.faUrl || null,
+    anilist: resolved.anilistId || null,
+    mal: resolved.malId || null,
   });
   if (resolved.mediaType && !merged.mediaType) merged.mediaType = resolved.mediaType;
   return merged;
@@ -307,18 +336,6 @@ function applyResolved(work, resolved = {}) {
 
 /** Los scrapers descubren datos (año, póster, título): sólo rellenan huecos. */
 /** `req.url` puede empezar con `//` (protocol-relative): nada de usar new URL() a ciegas. */
-function splitPath(rawUrl) {
-  if (!rawUrl) return '';
-  const index = String(rawUrl).indexOf('?');
-  return (index >= 0 ? String(rawUrl).slice(0, index) : String(rawUrl)) || '/';
-}
-
-function parseQuery(rawUrl) {
-  const index = String(rawUrl || '').indexOf('?');
-  if (index < 0) return {};
-  return Object.fromEntries(new URLSearchParams(String(rawUrl).slice(index + 1)).entries());
-}
-
 function mapResolved(resolved = {}) {
   const out = {};
   if (resolved.title) out.title = resolved.title;
@@ -331,13 +348,37 @@ function mapResolved(resolved = {}) {
   return out;
 }
 
-function decodeUserConfig(token) {
-  try {
-    const json = safeJson(base64UrlDecode(token));
-    return json && typeof json === 'object' ? json : {};
-  } catch {
-    return {};
+/** Decodifica el token de configuración: JSON crudo (formato del SDK) o base64url. */
+function decodeConfigToken(token) {
+  if (!token) return null;
+  const raw = String(token);
+  const candidates = [];
+  try { candidates.push(JSON.parse(decodeURIComponent(raw))); } catch (error) { void error; }
+  try { candidates.push(JSON.parse(Buffer.from(raw.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8'))); } catch (error) { void error; }
+  return candidates.find((value) => value && typeof value === 'object' && !Array.isArray(value)) || null;
+}
+
+function safeDecode(value) {
+  try { return decodeURIComponent(String(value)); } catch { return String(value); }
+}
+
+/**
+ * Stremio manda los extras del catálogo como segmento de ruta:
+ * /catalog/movie/top/extra=1&search=foo.json  |  /catalog/movie/top/60.json (skip)
+ */
+function parseExtras(tail) {
+  const out = {};
+  if (!tail) return out;
+  for (const part of tail.replace(/\.json$/, '').split('/')) {
+    const decoded = safeDecode(part);
+    if (!decoded) continue;
+    if (/^\d+$/.test(decoded)) { out.skip = decoded; continue; }
+    for (const pair of decoded.split('&')) {
+      const index = pair.indexOf('=');
+      if (index > 0) out[pair.slice(0, index).trim()] = safeDecode(pair.slice(index + 1));
+    }
   }
+  return out;
 }
 
 function deriveOrigin(request, cfg) {
@@ -350,6 +391,14 @@ function deriveOrigin(request, cfg) {
 function respond(status, body, headers = {}) {
   return { statusCode: status, status, headers, body: body === undefined ? '' : body };
 }
+function jsonCached(status, payload, ttlHours = 24) {
+  const maxAge = Math.max(60, Math.round(Number(ttlHours) * 3600 || 86400));
+  return respond(status, JSON.stringify(payload), {
+    ...JSON_HEADERS,
+    'Cache-Control': `public, max-age=${Math.min(maxAge, 86400)}, stale-while-revalidate=86400, stale-if-error=604800`,
+  });
+}
+
 function json(status, payload) {
   return respond(status, JSON.stringify(payload, null, 0), JSON_HEADERS);
 }

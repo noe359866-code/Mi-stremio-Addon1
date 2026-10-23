@@ -1,23 +1,42 @@
-# Despliegue en Netlify: en tu proyecto, pon "Base directory" = ratings-addon
-# (Netlify lee este archivo y crea la función + el proxy automáticamente).
+# Config de despliegue en Netlify.
+#
+# En tu proyecto de Netlify pon **Base directory = `ratings-addon`**
+# (Site configuration → Build & deployment → Base directory). Con eso Netlify
+# lee este archivo, crea la función `ratings` y el proxy de todas las rutas.
+#
+# Si prefieres no tocar el base directory: usa la config de la raíz o apunta
+# "Configuration file" a `ratings-addon/netlify.toml` (y entonces base = "." y
+# functions = "ratings-addon/netlify/functions").
+
 [build]
   base = "ratings-addon"
   functions = "netlify/functions"
-  command = ""            # no hay build: código suelto, sin dependencias
-  publish = "netlify/pub" # carpeta vacía a propósito: nada de fuentes públicas
+  command = ""            # no hay build: código suelto, cero dependencias de runtime
+  publish = "netlify/pub" # carpeta vacía a propósito: así ninguna fuente es pública
 
 [functions]
   node_version = "22"
+  # OBLIGATORIO aquí: la función hace require('../../src/app') — archivos fuera de
+  # netlify/functions/. Sin esbuild, Netlify empaqueta solo la carpeta de funciones
+  # y en runtime petaría con MODULE_NOT_FOUND.
+  node_bundler = "esbuild"
 
-# Todo pasa por la función del addon (manifest, catalogs, meta, api, configure)
+[build.environment]
+  NODE_VERSION = "22"
+  # El único devDependency es el linter opcional del manifiesto (test/manifest-lint.test.js);
+  # production evita instalarlo en el build de Netlify.
+  NODE_ENV = "production"
+  # Pasa las keys como variables del sitio (Site settings → Environment variables),
+  # no las escribas aquí: este archivo está en el repo.
+  #   TMDB_API_KEY, OMDB_API_KEY (opcional), PUBLIC_URL (opcional)
+  #   FETCH_TIMEOUT_MS=2500, FETCH_RETRIES=1, PER_HOST_MS=300, CACHE_TTL_HOURS=24
+  #   RATINGS_SOURCES=imdb,rottentomatoes,metacritic,filmaffinity,tmdb
+
+# Todo (manifiesto, catálogos, meta, /api/*, /configure.html) pasa por la función.
+# force = true para que el proxy cubra también las rutas que no son ficheros estáticos.
+# La URL que se instala en Stremio es la bonita: https://<tu-site>.netlify.app/manifest.json
 [[redirects]]
   from = "/*"
   to = "/.netlify/functions/ratings"
   status = 200
   force = true
-
-[build.environment]
-  # pon aquí tus keys o, mejor, en Site settings → Environment variables
-  # TMDB_API_KEY = "…"
-  # OMDB_API_KEY = "…"
-  NODE_VERSION = "22"

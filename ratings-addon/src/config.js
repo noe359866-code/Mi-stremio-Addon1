@@ -11,7 +11,7 @@
 
 const path = require('path');
 
-const ALL_SOURCES = ['imdb', 'rottentomatoes', 'metacritic', 'filmaffinity', 'tmdb'];
+const ALL_SOURCES = ['imdb', 'rottentomatoes', 'metacritic', 'filmaffinity', 'tmdb', 'anilist', 'mal'];
 
 /**
  * OJO: esta key de TMDB viene del proyecto previo del repo (está pública en
@@ -36,7 +36,7 @@ function envConfig(env = process.env) {
     .filter((item) => ALL_SOURCES.includes(item));
   return {
     // clave/identidad
-    addonName: env.ADDON_NAME || 'Puntuaciones · IMDb / RT / Metacritic / FilmAffinity / TMDB',
+    addonName: env.ADDON_NAME || 'Puntuaciones · IMDb / RT / Metacritic / FilmAffinity / TMDB + anime',
     addonDescription:
       env.ADDON_DESCRIPTION ||
       'Solo puntuaciones: Tomatometer, Metascore, IMDb, FilmAffinity y TMDB para pelis, series y anime. Cero streams, cero relleno.',
@@ -63,6 +63,10 @@ function envConfig(env = process.env) {
     tmdbToken: env.TMDB_API_TOKEN || env.TMDB_BEARER_TOKEN || '',
     omdbApiKey: env.OMDB_API_KEY || '',
     metacriticApiKey: env.METACRITIC_API_KEY || '',
+    // anime: MAL_CLIENT_ID activa la API oficial de MyAnimeList (si no, se usa Jikan)
+    malClientId: env.MAL_CLIENT_ID || env.MAL_CLIENT_KEY || '',
+    jikanBaseUrl: env.JIKAN_BASE_URL || '',
+    anilistEndpoint: env.ANILIST_GRAPHQL_URL || '',
     metacriticVersion: env.METACRITIC_API_VERSION || '4.2',
 
     // salida en Stremio
@@ -99,19 +103,29 @@ function envConfig(env = process.env) {
 
 function applyUserConfig(cfg, userConfig = {}) {
   const out = { ...cfg, weights: { ...cfg.weights }, minVotes: { ...cfg.minVotes }, sources: cfg.sources.slice() };
-  if (Array.isArray(userConfig.sources) && userConfig.sources.length) {
+  // `sources` puede venir como array (nuestra página) o como string 'imdb,tmdb' / 'all'
+  // (la UI nativa de Stremio construye el prefijo de config con los values del manifest).
+  if (typeof userConfig.sources === 'string') {
+    const list = userConfig.sources.trim().toLowerCase();
+    out.sources = !list || list === 'all' ? ALL_SOURCES.slice() : list.split(/[\s,;]+/).filter((id) => ALL_SOURCES.includes(id));
+    if (!out.sources.length) out.sources = ALL_SOURCES.slice();
+  } else if (Array.isArray(userConfig.sources) && userConfig.sources.length) {
     out.sources = userConfig.sources.filter((id) => ALL_SOURCES.includes(id));
     if (!out.sources.length) out.sources = ALL_SOURCES.slice();
   }
   if (userConfig.badge) out.badgeMetric = userConfig.badge;
   if (userConfig.panel !== undefined) out.showPanel = bool(userConfig.panel, true);
+  if (userConfig.showPanel !== undefined) out.showPanel = bool(userConfig.showPanel, true);
   if (userConfig.unavailable !== undefined) out.showUnavailable = bool(userConfig.unavailable, true);
+  if (userConfig.showUnavailable !== undefined) out.showUnavailable = bool(userConfig.showUnavailable, true);
   if (userConfig.links !== undefined) out.showLinks = bool(userConfig.links, true);
+  if (userConfig.showLinks !== undefined) out.showLinks = bool(userConfig.showLinks, true);
   if (userConfig.minScore !== undefined) out.minScore = num(userConfig.minScore, 0);
   if (userConfig.maxScore !== undefined) out.maxScore = num(userConfig.maxScore, 10);
   if (userConfig.limit !== undefined) out.catalogLimit = num(userConfig.limit, 50);
   if (userConfig.ttl !== undefined) out.cacheTtlHours = num(userConfig.ttl, 24);
   if (userConfig.lang) out.language = String(userConfig.lang);
+  if (userConfig.language) out.language = String(userConfig.language);
   if (userConfig.weights && typeof userConfig.weights === 'object') {
     for (const [key, value] of Object.entries(userConfig.weights)) {
       const parsed = Number(value);
