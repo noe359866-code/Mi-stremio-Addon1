@@ -1,0 +1,10 @@
+{
+  "version": 2,
+  "functions": {
+    "api/ratings.js": {
+      "memory": 1024,
+      "maxDuration": 60
+    }
+  },
+  "rewrites": [{ "source": "/((?!favicon.ico).*)", "destination": "/api/ratings" }]
+}
