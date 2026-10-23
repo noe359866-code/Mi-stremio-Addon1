@@ -1,0 +1,23 @@
+# Despliegue en Netlify: en tu proyecto, pon "Base directory" = ratings-addon
+# (Netlify lee este archivo y crea la función + el proxy automáticamente).
+[build]
+  base = "ratings-addon"
+  functions = "netlify/functions"
+  command = ""            # no hay build: código suelto, sin dependencias
+  publish = "netlify/pub" # carpeta vacía a propósito: nada de fuentes públicas
+
+[functions]
+  node_version = "22"
+
+# Todo pasa por la función del addon (manifest, catalogs, meta, api, configure)
+[[redirects]]
+  from = "/*"
+  to = "/.netlify/functions/ratings"
+  status = 200
+  force = true
+
+[build.environment]
+  # pon aquí tus keys o, mejor, en Site settings → Environment variables
+  # TMDB_API_KEY = "…"
+  # OMDB_API_KEY = "…"
+  NODE_VERSION = "22"

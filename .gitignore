@@ -1,0 +1,9 @@
+node_modules/
+.env
+.env.local
+*.log
+.npm/
+.DS_Store
+ratings-addon/coverage/
+ratings-addon/netlify/pub/*
+!ratings-addon/netlify/pub/.gitkeep
