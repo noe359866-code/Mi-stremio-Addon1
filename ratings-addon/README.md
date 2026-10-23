@@ -50,7 +50,7 @@ npm run demo                       # => http://localhost:7000/configure.html
 export TMDB_API_KEY='tu_key_tmdb'  # recomendado (sin esto se pierde título/año/poster y el imdb_id)
 npm start                          # => http://localhost:7000
 
-# c) pruebas (63 tests, no tocan la red)
+# c) pruebas (91 tests, no tocan la red)
 npm test
 ```
 
@@ -124,14 +124,97 @@ caché, cobertura) y `LOG_VERBOSE=1` en el servidor para el detalle de cada fetc
 
 ## 5. Despliegue
 
-| Plataforma | Pasos |
-| --- | --- |
-| **Netlify** (como tu proyecto actual) | Sube el repo y en *Site settings → Build & deploy* pon **Base directory = `ratings-addon`**. El [`netlify.toml`](netlify.toml) ya declara `netlify/functions` y un redirect `/*` → `/.netlify/functions/ratings`. Añade `TMDB_API_KEY` (y `OMDB_API_KEY`) en las env vars del sitio. |
-| **Vercel** | Importa el repo, **Root directory = `ratings-addon`**. [`vercel.json`](vercel.json) reescribe todo a [`api/ratings.js`](api/ratings.js) (1024 MB, 60 s). |
-| **Docker / NAS / Railway / Render** | `docker build -t stremio-ratings ./ratings-addon && docker run -p 7000:7000 -e TMDB_API_KEY=… stremio-ratings`. En Railway/Render: Start command `node server.js`, env `PORT` automática. |
-| **protonet/VPS** | `pm2 start server.js --name ratings` con env. |
+### 5.1 Netlify (recomendado, es como ya tienes el otro addon)
 
-⚠️ **Lo más importante del despliegue**: IMDb, Rotten Tomatoes, Metacritic y FilmAffinity
+1. **Sites → Add new site → Import an existing project → GitHub** → elige
+   `noe359866-code/Mi-stremio-Addon1`.
+2. En el asistente, **Advanced → Build settings → Base directory = `ratings-addon`**.
+   Con eso Netlify lee [`netlify.toml`](netlify.toml): crea la función `ratings`,
+   pone `publish` en una carpeta vacía (ningún fuente se sirve) y activa el proxy
+   `/* → /.netlify/functions/ratings`.
+   *Si prefieres no tocar el base directory*: en su lugar pon
+   **Configuration file = `ratings-addon/netlify.toml`** (y deja base en `.`).
+3. **Environment variables** (Site settings → Environment variables → Add a variable):
+
+   | Variable | Valor | Para qué |
+   | --- | --- | --- |
+   | `TMDB_API_KEY` | tu key de TMDB | **casi obligatoria**: resuelve `tt…` → título/año/tipo y da la nota de TMDB |
+   | `OMDB_API_KEY` | opcional | IMDb + RT + Metacritic por API (esquiva el scraping y sus bloqueos) |
+   | `PUBLIC_URL` | `https://<tu-site>.netlify.app` | fija el origin del manifiesto si las headers del proxy mintieran |
+   | `RATINGS_SOURCES` | `imdb,tmdb,filmaffinity` | recorta las fuentes lentas/bloqueadas |
+   | `FETCH_TIMEOUT_MS` | `2500` (ya es el default en Netlify) | la función corta a 10 s en plan gratis |
+   | `ADDON_NAME` | el que quieras | nombre que se ve en Stremio |
+
+   El adaptador baja `FETCH_TIMEOUT_MS=2500`, `FETCH_RETRIES=1` y `PER_HOST_MS=300`
+   **solo si tú no las pones**, para que una fuente lenta no haga que Netlify mate la
+   petición. Lo que falta se rellena en la siguiente visita (caché + `stale-if-error`).
+4. **Deploy site**. En los logs debe aparecer `Functions detected: 1 (ratings)` y
+   `node_bundler = esbuild` empaquetando `netlify/functions/ratings.js` con su `src/`.
+   Ese `node_bundler` **no es opcional**: sin él Netlify empaqueta solo la carpeta de
+   funciones y `require('../../src/app')` reventaría en runtime con `MODULE_NOT_FOUND`.
+5. URL que instalas en Stremio:
+
+   ```
+   https://<tu-site>.netlify.app/manifest.json
+   ```
+
+   (también vale `stremio://<tu-site>.netlify.app/manifest.json`, y el botón
+   **Instalar addon** de `/configure.html` hace el `postMessage` al Stremio de escritorio).
+
+6. **Comprueba el despliegue** con la lista de verificación incluida:
+
+   ```bash
+   npm run verify -- https://<tu-site>.netlify.app
+   ```
+
+   Revisa manifiesto, proxy, catálogos, búsqueda de Discover, ficha, `/api/ratings`,
+   config por URL y el 404; sale con exit code distinto de 0 si algo falla.
+   Salida esperada (en local, con `npm run demo`, es idéntica menos en `mock=sí`):
+
+   ```
+     ✔ manifiesto               18 catálogos · Puntuaciones · IMDb / RT / …
+     ✔ catálogo con extras       Inception (2010)
+     ✔ ficha de película         Inception (2010) · 5 enlaces
+     ✔ API de puntuaciones       7 métricas · combinada 8.4
+   ```
+
+**Si solo tienes el repo conectado a otro sitio** (el de `Mi Projecto`): crea un
+**sitio nuevo** para el addon de puntuaciones en vez de reutilizarlo, y no añadas un
+`netlify.toml` en la raíz del repo — podría cambiarle el base directory al sitio actual.
+
+### 5.2 Vercel
+
+Importa el repo, **Root directory = `ratings-addon`**. [`vercel.json`](vercel.json)
+reescribe todo a [`api/ratings.js`](api/ratings.js) pasándole además `?p=<ruta original>`
+(el adaptador la usa si Vercel entrega `req.url` ya reescrita; si no, da igual).
+1024 MB y 60 s de duración máxima.
+
+### 5.3 Docker / NAS / Railway / Render
+
+```bash
+docker build -t stremio-ratings ./ratings-addon
+docker run -d -p 7000:7000 -e TMDB_API_KEY=… --name ratings stremio-ratings
+```
+
+En Railway/Render: Start command `node server.js`, `PORT` la pone la plataforma.
+A diferencia de los serverless, aquí el scraper tiene más papeletas para pasar los
+muros anti-bot si la IP no es de datacenter, y la caché en memoria se aprovecha de
+verdad (en Netlify/Vercel solo vive mientras el contenedor no se congele).
+
+### 5.4 Averías típicas de serverless
+
+| Síntoma | Causa y arreglo |
+| --- | --- |
+| `MODULE_NOT_FOUND: ../../src/app` en los logs de la función | falta `node_bundler = "esbuild"` en `[functions]` del `netlify.toml` |
+| Todas las rutas devuelven HTML del índice | el proxy no está: revisa que Netlify leyó `ratings-addon/netlify.toml` (los `[[redirects]]`) |
+| `HTTP 404` en `/manifest.json` pero `/​.netlify/functions/ratings` responde | el `/*` no está aplicado (caché de Netlify): *Deploys → Trigger deploy → Clear cache and retry* |
+| `Task timed out after 10 seconds` | baja `FETCH_TIMEOUT_MS`/`FETCH_RETRIES` o quita fuentes con `RATINGS_SOURCES` |
+| `sources[].ok:false` con `code:"blocked"` | muro anti-bot del datacenter → ver 5.5 |
+| El addon no se instala | la URL debe terminar en `/manifest.json` (sin `?` ni rutas después) |
+
+### 5.5 ⚠️ Lo más importante del despliegue
+
+IMDb, Rotten Tomatoes, Metacritic y FilmAffinity
 ponen muros anti-bot que **bloquean IPs de datacenter** (Netlify/Vercel/Railway/Render…).
 Síntoma: `/api/health` OK pero `sources[].ok:false` con `code:"blocked"` o `timeout`.
 Remedios, de más a menos eficaz:
@@ -142,12 +225,16 @@ Remedios, de más a menos eficaz:
    y no bloquea; FilmAffinity es el más tolerante.
 4. Bajar presión: `PER_HOST_MS=2000`, `FETCH_RETRIES=0`, `CACHE_TTL_HOURS=72`.
 
+En Netlify, además, los reintentos salen gratis: si una fuente no llegó a tiempo, la
+siguida petición (o el propio Stremio al reabrir la ficha) la rellena desde la caché.
+
 ## 6. Cómo está hecho (por si quieres tocar los parsers)
 
 ```
 server.js                     nodo http sin dependencias (bind 0.0.0.0)
 netlify/functions/ratings.js  adaptador Netlify   ·   api/ratings.js  adaptador Vercel
 src/app.js                    router único: handle({method,path,query}) → {status,headers,body}
+src/serverless.js             normaliza eventos de Netlify/Vercel (path, query, origin) y responde lambda
 src/manifest.js               manifiesto Stremio + logo/bg SVG      src/configure.js  página /configure.html
 src/resolve.js                id Stremio → work{title,year,type,ids} (TMDB find/search, arranque por IMDb)
 src/providers/tmdb.js         API oficial: search/find/details/discover  (el "resolvedor")
@@ -163,7 +250,8 @@ src/format.js                 meta de Stremio: badge, descripción, links
 src/defs.js                   registro de fuentes/métricas, pesos, combinada, estrellas
 src/cache.js src/http.js      TTL+LRU+single-flight · fetch con UA de navegador, timeout, throttle por dominio
 src/mock/index.js             modo demo: HTML/JSON con el markup real de cada web
-test/*.test.js                63 tests (parsers con fixtures, match, pesos, addon entero, linter oficial)
+test/*.test.js                91 tests (parsers con fixtures, match, pesos, addon entero, linter
+                              oficial de Stremio, adaptadores serverless y el JS del navegador)
 ```
 
 Reglas de oro al tocar un parser:

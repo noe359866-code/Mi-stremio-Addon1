@@ -6,5 +6,7 @@
       "maxDuration": 60
     }
   },
-  "rewrites": [{ "source": "/((?!favicon.ico).*)", "destination": "/api/ratings" }]
+  "rewrites": [
+    { "source": "/((?!favicon\\.ico).*)", "destination": "/api/ratings?p=/$1" }
+  ]
 }

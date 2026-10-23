@@ -34,7 +34,9 @@ function manifestFor({ cfg, origin, basePath = '' }) {
     description: buildDescription(cfg),
     logo: `${origin}${basePath}/logo.svg`,
     background: `${origin}${basePath}/bg.svg`,
-    contact: `${origin}${basePath}/api/health`,
+    // El SDK usa `contactEmail` y el protocolo documenta `contactLink`: mandamos los dos.
+    contactLink: `${origin}${basePath}/api/health`,
+    contactEmail: `${origin}${basePath}/api/health`,
     resources: [
       { name: 'catalog', types: TYPES },
       {

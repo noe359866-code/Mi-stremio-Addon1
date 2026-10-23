@@ -435,7 +435,27 @@ function truncate(text, max = 120) {
   return text && text.length > max ? `${text.slice(0, max)}…` : text;
 }
 
+
+/** 'https://host/a/b?x' | '/a/b?x' -> '/a/b' (sin new URL: evita tratar '//x' como protocol-relative) */
+function splitPath(rawUrl) {
+  if (!rawUrl) return '';
+  const value = String(rawUrl);
+  const origin = value.indexOf('://');
+  const rest = origin >= 0 ? (value.slice(origin + 3).match(/\/.*/)||['/'])[0] : value;
+  const index = rest.indexOf('?');
+  return (index >= 0 ? rest.slice(0, index) : rest) || '/';
+}
+
+/** 'https://host/a?x=1' -> { x: '1' } */
+function parseQuery(rawUrl) {
+  const index = String(rawUrl || '').indexOf('?');
+  if (index < 0) return {};
+  return Object.fromEntries(new URLSearchParams(String(rawUrl).slice(index + 1)).entries());
+}
+
 module.exports = {
+  splitPath,
+  parseQuery,
   mergeGaps,
   stripYearSuffix,
   forEachMatch,

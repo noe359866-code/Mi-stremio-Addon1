@@ -8,7 +8,9 @@
     "start": "node server.js",
     "dev": "RATINGS_MOCK=1 PORT=7000 node --watch server.js",
     "demo": "RATINGS_MOCK=1 PORT=7000 node server.js",
-    "test": "node --test-reporter=spec --test \"test/*.test.js\""
+    "test": "node --test-reporter=spec --test \"test/*.test.js\"",
+    "verify": "node scripts/verify.js",
+    "check:netlify": "node scripts/verify.js"
   },
   "keywords": [
     "stremio",
